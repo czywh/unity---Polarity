@@ -1,0 +1,195 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: water
+  m_Shader: {fileID: -6465566751694194690, guid: 748dfd9b16793834cbfc87f160c1b0fe,
+    type: 3}
+  m_ValidKeywords:
+  - _REFRACTION_ENABLED
+  - _RIPPLE_ENABLED
+  - _SHOREFOAM_ENABLED_
+  - _SURFACEFOAMTEXTURE_ENABLED
+  - _WATERFOAM_ENABLED
+  - _WAVE_ENABLED
+  m_InvalidKeywords:
+  - _EMISSION
+  - _USESHOREFOAM_A
+  m_LightmapFlags: 2
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _CausticTexture:
+        m_Texture: {fileID: 2800000, guid: ad1d482cdbdb6d5478806fd57ed5fcfb, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _FoamTexture:
+        m_Texture: {fileID: 2800000, guid: 53a41e0784e780b4995e9c2980387451, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SurfaceTexture:
+        m_Texture: {fileID: 2800000, guid: 2b1c85c7a2b266345b255d0785823520, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _surfaceShadowTexture:
+        m_Texture: {fileID: 2800000, guid: 2b1c85c7a2b266345b255d0785823520, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_Lightmaps:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_LightmapsInd:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_ShadowMasks:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _CausticAlpha: 0.485
+    - _CausticCutout: 0.9
+    - _CausticSpeed: 0.013
+    - _CausticTiling: 2.5
+    - _Depth: 4.3
+    - _DepthFactor: 1
+    - _DepthFallOff: 0.826
+    - _Float: 13.62
+    - _Float_1: 5.91
+    - _FoamAlpha: 1
+    - _FoamAmount: 0.92
+    - _FoamCutout: 0.1
+    - _FoamDensity: 100
+    - _FoamDensityCutOut: 1.05
+    - _FoamDepth: 2
+    - _FoamFallOff: 2.7
+    - _FoamShoreWidth: 0.9
+    - _FoamShore_Alpha: 1
+    - _FoamShore_Amount: 0.8
+    - _FoamShore_Cutout: 0.1
+    - _FoamShore_Depth: 2
+    - _FoamShore_FallOff: 2
+    - _FoamShore_Tiling: 1
+    - _FoamWater_Alpha: 1
+    - _FoamWater_CutOut: 1.01
+    - _FoamWater_Density: 60.8
+    - _FoamWater_Speed: 0.0158
+    - _Hue: 0.06
+    - _Intensity: 0.753
+    - _IsOrtographic: 0
+    - _Oppacity: 0.308
+    - _QueueControl: 0
+    - _QueueOffset: 0
+    - _REFRACTION_ENABLED: 1
+    - _RIPPLE_ENABLED: 1
+    - _RefractionScale: 0
+    - _RefractionSpeed: 0
+    - _RefractionStrength: 0
+    - _RippleAlpha: 0.254
+    - _RippleDensity: 2
+    - _RippleDepth: 50
+    - _RippleDepthFallOff: 1
+    - _RippleDepthfall: 0.053
+    - _RippleHue: 1
+    - _RippleSlimness: 5
+    - _RippleSpeed: 3.5
+    - _RippleSpeed_2: 0
+    - _RippleTiling: 0.32
+    - _SHOREFOAM_ENABLED_: 1
+    - _SURFACEFOAMTEXTURE_ENABLED: 1
+    - _SURFACEFOAM_ENABLED: 0
+    - _ShoreFoam_Alpha: 1
+    - _ShoreFoam_Amount: 0.47
+    - _ShoreFoam_Cutout: 0.122
+    - _ShoreFoam_Depth: 2.27
+    - _ShoreFoam_FallOff: 2
+    - _ShoreFoam_Tiling: 1
+    - _ShoreFoam_Width: 1.58
+    - _SurfaceAlpha: 0.853
+    - _SurfaceTiling: 4
+    - _SurfaceTilingHori: 2
+    - _Surface_water_foam_tilin: 0.193
+    - _TilingSurfaceFoam: 0.16
+    - _TopR_Density: 6.9
+    - _TopR_Slimness: 4.67
+    - _USESHOREFOAM: 0
+    - _UseStylishFoam: 1
+    - _WATERFOAM_ENABLED: 1
+    - _WAVE_ENABLED: 1
+    - _WaterFoam_Alpha: 1
+    - _WaterFoam_CutOut: 2.96
+    - _WaterFoam_Density: 54.9
+    - _WaterFoam_Speed: 0.0231
+    - _WaterFoam_enabled: 1
+    - _WaterTransparency: 1
+    - _WaveFactor: 0.39
+    - _WaveHeightScale: 0.604
+    - _WaveIntensity: 0.1
+    - _WaveSpeed: 0.112
+    - _animatedRipple_enabled: 1
+    - _cutoutSurface: 0
+    - _dynamic_enabled: 1
+    - _foamTiling: 1
+    - _foam_enabled: 1
+    - _movementSpeed: 0.091
+    - _refractionScale: 14
+    - _refractionSpeed: 0.1
+    - _refractionStrength: 0.16
+    - _refraction_enabled: 1
+    - _ripple_enabled: 1
+    - _shoreFoam_enabled: 1
+    - _surfaceDirection: 0
+    - _surfaceFoam_enabled: 0
+    - _surfaceShdowAlpha: 0.094
+    - _surfaceTilingFactor: 1.27
+    - _useShoreFoam: 1
+    - _useShoreWave: 1
+    - _wave_enabled: 1
+    m_Colors:
+    - White: {r: 1, g: 1, b: 1, a: 1}
+    - _CausticColor: {r: 2.670157, g: 2.670157, b: 2.670157, a: 1}
+    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _FactorColor: {r: 0, g: 0, b: 0, a: 1}
+    - _FoamColor: {r: 1, g: 1, b: 1, a: 1}
+    - _FoamShore_Color: {r: 1, g: 1, b: 1, a: 1}
+    - _FoamShore_Speed: {r: 0, g: 0.2, b: 0, a: 0}
+    - _FoamSpeed: {r: 0, g: 0.05, b: 0, a: 0}
+    - _FoamWaterColor: {r: 1, g: 1, b: 1, a: 1}
+    - _MainColor: {r: 0, g: 0.22690807, b: 0.9529412, a: 1}
+    - _RippleColor: {r: 0.7216981, g: 1, b: 0.9688775, a: 1}
+    - _RippleTopColor: {r: 0, g: 0, b: 0, a: 1}
+    - _ShadowOffset: {r: -0.5, g: 0.5, b: 0, a: 0}
+    - _ShoreColor: {r: 0, g: 0.58159006, b: 1, a: 1}
+    - _ShoreFoam_Color: {r: 1, g: 1, b: 1, a: 1}
+    - _ShoreFoam_Speed: {r: 0.01, g: 0.2, b: 0, a: 0}
+    - _WaterFoam_Color: {r: 1, g: 1, b: 1, a: 0}
+    - _desplacementDirection: {r: -3, g: 0, b: 0, a: 0}
+    - _surfaceColor: {r: 1, g: 1, b: 1, a: 1}
+    - _surfaceShadowColor: {r: 0, g: 0.84142923, b: 1, a: 1}
+    - _tilingSurface: {r: 0.23, g: -0.13, b: 0, a: 0}
+  m_BuildTextureStacks: []
+--- !u!114 &5423018869641980688
+MonoBehaviour:
+  m_ObjectHideFlags: 11
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  version: 10

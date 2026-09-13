@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f73db7c4270705a4d9a62a87cda7b129
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 256398
+  packageName: Stylized Cartoon Water URP
+  packageVersion: 1.0
+  assetPath: Assets/StylizedCartoonWater/Demo/Scene1/Materials/water.mat
+  uploadId: 928360

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1511535533195f24b88cd04b3c84ef58
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 256398
+  packageName: Stylized Cartoon Water URP
+  packageVersion: 1.0
+  assetPath: Assets/StylizedCartoonWater/Demo/Scene1/Materials/LifeSaver.mat
+  uploadId: 928360
