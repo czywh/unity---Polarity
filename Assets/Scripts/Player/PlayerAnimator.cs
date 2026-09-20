@@ -39,6 +39,7 @@ public class PlayerAnimator : MonoBehaviour
 
     private CharacterController controller;
     private CharacterDeathHandler death;
+    private PlayerConsoleNavigator navigator;   // 可空：操作模式下右键寻路时由它提供速度
     private int locomotionHash;
 
     private void Reset()
@@ -57,6 +58,7 @@ public class PlayerAnimator : MonoBehaviour
 
         controller = GetComponent<CharacterController>();
         death = GetComponent<CharacterDeathHandler>();
+        navigator = GetComponent<PlayerConsoleNavigator>();
         locomotionHash = Animator.StringToHash(locomotionStateName);
     }
 
@@ -102,8 +104,12 @@ public class PlayerAnimator : MonoBehaviour
         if (motor == null || animator == null) return;
 
         // 实际水平速度 → 0~1（walkSpeed 落在中段、runSpeed 到 1）
+        // 操作模式右键寻路时 motor 被冻结（PlanarSpeed=0），改读寻路组件的实际速度
+        float planar = (navigator != null && navigator.IsNavigating)
+            ? navigator.PlanarSpeed
+            : motor.PlanarSpeed;
         float normalized = motor.MaxSpeed > 0f
-            ? Mathf.Clamp01(motor.PlanarSpeed / motor.MaxSpeed)
+            ? Mathf.Clamp01(planar / motor.MaxSpeed)
             : 0f;
 
         animator.SetFloat(SpeedId, normalized, speedDampTime, Time.deltaTime);
