@@ -33,6 +33,11 @@ public class EnergySystem : MonoBehaviour
     /// 电量耗尽的那一刻触发一次
     public event System.Action Depleted;
 
+    /// <summary>本局累计消耗的电量（只加不减；充电不抵扣）。结算界面用</summary>
+    public float TotalDrained { get; private set; }
+    /// <summary>本局累计充入的电量</summary>
+    public float TotalRecharged { get; private set; }
+
     private MaterialPropertyBlock mpb;
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor"); // URP
     private static readonly int ColorId = Shader.PropertyToID("_Color");         // 内置管线
@@ -56,6 +61,7 @@ public class EnergySystem : MonoBehaviour
         if (amount <= 0f || currentEnergy <= 0f) return;
         float prev = currentEnergy;
         currentEnergy = Mathf.Max(0f, currentEnergy - amount);
+        TotalDrained += prev - currentEnergy;          // 只记实际扣掉的
         if (!Mathf.Approximately(prev, currentEnergy)) ApplyColor();
         if (currentEnergy <= 0f && prev > 0f) Depleted?.Invoke();
     }
@@ -66,6 +72,7 @@ public class EnergySystem : MonoBehaviour
         if (amount <= 0f) return;
         float prev = currentEnergy;
         currentEnergy = Mathf.Min(maxEnergy, currentEnergy + amount);
+        TotalRecharged += currentEnergy - prev;
         if (!Mathf.Approximately(prev, currentEnergy)) ApplyColor();
     }
 

@@ -19,6 +19,10 @@ public class ConsoleStation : InteractableBase
     public Vector3 cameraEuler = new Vector3(55.952f, 90f, -0.2f);
     public float orthographicSize = 33f;
 
+    [Header("本操作台可控制的物体")]
+    [Tooltip("进入操作模式后面板上列出的 ConsoleOperable。\n留空 = 场景里所有 ConsoleOperable（按名字排序）")]
+    public ConsoleOperable[] operables;
+
     [Header("引用（留空自动查找）")]
     [SerializeField] private OperationModeController operationMode;
 
@@ -71,6 +75,20 @@ public class ConsoleStation : InteractableBase
             if (operationMode != null) operationMode.Enter(this);
             else Debug.LogWarning("[操作台] operationMode 为空，无法进入", this);
         }
+    }
+
+    /// 本操作台控制的物体列表（已剔除空槽；未配置则退回全场扫描）
+    public ConsoleOperable[] GetOperables()
+    {
+        if (operables != null && operables.Length > 0)
+        {
+            var list = new System.Collections.Generic.List<ConsoleOperable>(operables.Length);
+            foreach (var o in operables) if (o != null) list.Add(o);
+            if (list.Count > 0) return list.ToArray();
+        }
+        var all = FindObjectsByType<ConsoleOperable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        System.Array.Sort(all, (a, b) => string.CompareOrdinal(a.name, b.name));
+        return all;
     }
 
     /// 提供本操作台的相机机位（有锚点用锚点，否则用坐标字段）

@@ -17,7 +17,8 @@ public class PassiveFall : MonoBehaviour
 {
     private CharacterController controller;
     private CharacterMotorBase motor;
-    private CharacterDeathHandler death;   // 可空
+    private CharacterDeathHandler death;         // 可空
+    private RobotConsoleMover consoleMover;      // 可空：操作模式下由它接管重力与跳跃
     private float verticalVelocity;
 
     void Awake()
@@ -25,11 +26,21 @@ public class PassiveFall : MonoBehaviour
         controller = GetComponent<CharacterController>();
         motor = GetComponent<CharacterMotorBase>();
         death = GetComponent<CharacterDeathHandler>();
+        consoleMover = GetComponent<RobotConsoleMover>();
     }
 
     void Update()
     {
         if (motor == null) return;
+
+        // 操作模式：RobotConsoleMover 启用时由它独占垂直运动（重力 + 跳跃）。
+        // 这里必须让位——否则两个组件各自累积 verticalVelocity 并各调一次
+        // controller.Move()，重力会变成两份，跳跃也会被立刻按回地面。
+        if (consoleMover != null && consoleMover.enabled)
+        {
+            verticalVelocity = 0f;
+            return;
+        }
 
         // 当前角色(motor 启用) → motor 自己处理重力，本组件让位并清零
         // 死亡流程中 → 交给 CharacterDeathHandler 冻结/传送，别在这抢着施加重力

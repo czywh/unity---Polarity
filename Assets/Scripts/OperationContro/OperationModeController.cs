@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 /// <summary>
 /// CORE　操作模式管理器（带调试日志版）。ConsoleStation 按 F 时调 Enter()：
@@ -6,7 +7,12 @@ using UnityEngine;
 ///   · 禁用 OrbitFollowCamera（相机脱离鼠标控制、保持不动）；
 ///   · 禁用 CharacterSwitcher（Q 切换失效）+ 锁住玩家 / 机器人所有控制脚本；
 ///   · 相机移到操作台机位，投影切 Orthographic + 指定 size。
-/// 按 ESC 调 Exit()：还原相机（切回 Perspective + 原机位）、解冻控制、交回 Q 切换。
+///   · 显示 ConsoleTogglePanel：屏幕右侧一列 toggle 按钮，每个对应一个 ConsoleOperable，点击即触发。
+/// 按 ESC 调 Exit()：隐藏面板、还原相机（切回 Perspective + 原机位）、解冻控制、交回 Q 切换。
+///
+/// 触发可操作物的两种方式：
+///   · 面板按钮（默认，推荐）—— 由 ConsoleTogglePanel 负责；
+///   · 射线点中物体（旧方案）—— 勾 clickToOperate 才启用，且鼠标悬停在 UI 上时不会误触发。
 ///
 /// 调试：勾 verboseLog 后，进入/退出/点击各步骤都会在 Console 打印，方便定位"点击无效"等问题。
 /// </summary>
@@ -18,6 +24,8 @@ public class OperationModeController : MonoBehaviour
     [SerializeField] private CharacterSwitcher switcher;
     [Tooltip("操作模式下启用的机器人固定轴向移动组件（留空自动查找）")]
     [SerializeField] private RobotConsoleMover robotConsoleMover;
+    [Tooltip("操作模式下显示的 toggle 面板（留空自动查找；场景里没有就运行时自动创建一个默认的）")]
+    [SerializeField] private ConsoleTogglePanel togglePanel;
 
     [Header("输入")]
     public KeyCode exitKey = KeyCode.Escape;
@@ -26,7 +34,9 @@ public class OperationModeController : MonoBehaviour
     [Tooltip("操作模式下是否显示鼠标光标（点击物体需要开启）")]
     public bool showCursorInMode = true;
 
-    [Header("操作模式点击")]
+    [Header("操作模式点击（旧方案：射线点中物体）")]
+    [Tooltip("是否允许用鼠标射线直接点场景里的可操作物。默认关闭，改用面板按钮")]
+    public bool clickToOperate = false;
     [Tooltip("可点击物体所在层；建议只勾可操作物的层")]
     public LayerMask clickMask = ~0;
     [Tooltip("点击射线最大距离")]
@@ -61,6 +71,8 @@ public class OperationModeController : MonoBehaviour
         if (orbitCamera == null && cam != null) orbitCamera = cam.GetComponent<OrbitFollowCamera>();
         if (switcher == null) switcher = FindFirstObjectByType<CharacterSwitcher>();
         if (robotConsoleMover == null) robotConsoleMover = FindFirstObjectByType<RobotConsoleMover>(FindObjectsInactive.Include);
+        if (togglePanel == null) togglePanel = FindFirstObjectByType<ConsoleTogglePanel>(FindObjectsInactive.Include);
+        if (togglePanel == null) togglePanel = ConsoleTogglePanel.CreateDefault();
 
         // 启动自检：把关键引用是否就位打印出来
         Log($"Awake 自检 → cam={(cam ? cam.name : "null")}, " +
@@ -76,8 +88,13 @@ public class OperationModeController : MonoBehaviour
 
         if (Input.GetKeyDown(exitKey)) { Exit(); return; }
 
-        if (Input.GetMouseButtonDown(0)) TryClickOperable();
+        // 旧方案：射线点物体。鼠标压在 UI 上时跳过，避免点面板按钮时同时打中场景物体
+        if (clickToOperate && Input.GetMouseButtonDown(0) && !IsPointerOverUI())
+            TryClickOperable();
     }
+
+    private static bool IsPointerOverUI()
+        => EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
 
     // 从鼠标位置发射线，命中的可操作物调 Operate()
     private void TryClickOperable()
@@ -179,6 +196,10 @@ public class OperationModeController : MonoBehaviour
             Cursor.visible = true;
         }
         Log($"光标：lockState={Cursor.lockState}, visible={Cursor.visible}（showCursorInMode={showCursorInMode}）");
+
+        // 显示 toggle 面板
+        if (togglePanel != null) togglePanel.Show(console, cam);
+        else Log("提示：togglePanel 为空，不会显示操作面板");
     }
 
     public void Exit()
@@ -187,6 +208,9 @@ public class OperationModeController : MonoBehaviour
         if (cam == null) { Debug.LogWarning("[操作模式] Exit 失败：cam 为空", this); return; }
 
         Log("<color=cyan>退出操作模式</color>");
+
+        // 先收面板
+        if (togglePanel != null) togglePanel.Hide();
 
         // 还原相机（透视 + FOV + F 时的机位）
         cam.orthographic = savedOrtho;

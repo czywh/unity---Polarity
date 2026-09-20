@@ -16,9 +16,8 @@ MonoBehaviour:
     debugReplacementPS: {fileID: 4800000, guid: cf852408f2e174538bcd9b7fda1c5ae7,
       type: 3}
     hdrDebugViewPS: {fileID: 4800000, guid: 573620ae32aec764abd4d728906d2587, type: 3}
-  m_RendererFeatures:
-  - {fileID: 5892145028662230519}
-  m_RendererFeatureMap: f7fd7e86af1ac551
+  m_RendererFeatures: []
+  m_RendererFeatureMap: 
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -61,35 +60,3 @@ MonoBehaviour:
   m_CopyDepthMode: 1
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
---- !u!114 &5892145028662230519
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9e3d42f04a174f849b11ce9cf55e7cbc, type: 3}
-  m_Name: OutlinesSettings
-  m_EditorClassIdentifier: 
-  m_Active: 1
-  passEvent: 600
-  layerMask:
-    serializedVersion: 2
-    m_Bits: 64
-  outlineConfig:
-    outlineLines: 0
-    isMoving: 0
-    outlineColor: {r: 1, g: 1, b: 1, a: 1}
-    outlineThickness: 0.6
-    outlineMoveScale: 65.8
-    outlineSpeed: 0.071
-    normalEdgeThreshold: 0.3
-    textureFormat: 0
-    depthBits: 0
-    textureFilterMode: 0
-    clearColor: {r: 0, g: 0, b: 0, a: 0}
-    objectData: 0
-    dynamicBatching: 1
-    instancing: 1

@@ -25,7 +25,7 @@ public class InteractionPrompt : MonoBehaviour
 
     [Header("操作模式回退来源（留空自动查找）")]
     [Tooltip("操作模式下 Interactor 被冻结，改由 RobotConsoleMover 提供\n" +
-             "\"当前贴近的充电桩\"，判定条件与按 F 充电完全一致")]
+             "\"当前贴近的交互物\"（充电桩 / 终点…），判定条件与按 F 完全一致")]
     [SerializeField] private RobotConsoleMover[] consoleMovers;
     [Tooltip("关掉则操作模式下不显示任何提示")]
     [SerializeField] private bool showInOperationMode = true;
@@ -238,7 +238,7 @@ public class InteractionPrompt : MonoBehaviour
     }
 
     /// 当前该给谁显示提示：优先持有控制权的 Interactor；
-    /// 都没有（= 操作模式冻结中）则回退到 RobotConsoleMover 的贴近充电桩
+    /// 都没有（= 操作模式冻结中）则回退到 RobotConsoleMover 的贴近交互物（充电桩 / 终点…）
     private InteractableBase FindTarget()
     {
         Interactor active = ActiveInteractor();
@@ -250,7 +250,7 @@ public class InteractionPrompt : MonoBehaviour
         {
             var cm = consoleMovers[i];
             if (cm == null || !cm.isActiveAndEnabled) continue;
-            if (cm.NearestDock != null) { viaConsole = true; return cm.NearestDock; }
+            if (cm.NearestInteractable != null) { viaConsole = true; return cm.NearestInteractable; }
         }
         return null;
     }
