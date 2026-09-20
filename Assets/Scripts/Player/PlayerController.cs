@@ -1,23 +1,23 @@
 using UnityEngine;
 
 /// <summary>
-/// PLAYER-01　主角移动控制器。
-/// 移动内核全部继承自 CharacterMotorBase，这里只声明玩家自己的参数。
+/// PLAYER-01 Main character movement controller.
+/// The entire movement core is inherited from CharacterMotorBase; only the player's own parameters are declared here.
 /// </summary>
 public class PlayerController : CharacterMotorBase
 {
-    [Header("玩家速度 / 跳跃")]
+    [Header("Player Speed / Jump")]
     public float walkSpeed = 4f;
     public float runSpeed = 7f;
     public float jumpHeight = 1.5f;
 
-    // 把玩家参数喂给基类
+    // Feed player parameters to the base class
     protected override float WalkSpeed => walkSpeed;
     protected override float RunSpeed => runSpeed;
     protected override float JumpHeight => jumpHeight;
-    protected override bool CanRunNow => true;   // 玩家恒可奔跑
-    protected override bool CanJumpNow => true;  // 玩家恒可跳跃
-    protected override bool CanPhantom => true;  // 玩家可进入幽灵态悬浮
+    protected override bool CanRunNow => true;   // Player can always run
+    protected override bool CanJumpNow => true;  // Player can always jump
+    protected override bool CanPhantom => true;  // Player can enter phantom state (floating)
 
-    // 玩家暂无额外输入；攻击 / 交互以后各自独立成组件，不塞进移动控制器。
+    // No extra player input for now; attack / interaction will be separate components, not stuffed into the movement controller.
 }

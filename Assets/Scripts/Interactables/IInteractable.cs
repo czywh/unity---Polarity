@@ -1,35 +1,35 @@
 using UnityEngine;
 
-/// <summary>交互者类型：当前由谁发起交互</summary>
+/// <summary>Interactor type: who is currently initiating the interaction</summary>
 public enum InteractorType { Player, Robot }
 
-/// <summary>谁可以交互这个物体</summary>
+/// <summary>Who can interact with this object</summary>
 public enum InteractAccess { PlayerOnly, RobotOnly, Both }
 
 /// <summary>
-/// 可交互物接口。场景中一切可交互对象（充电桩、开关、拉杆…）实现它。
-/// 实际项目里一般直接继承 InteractableBase（已实现本接口 + 焦点管理）。
+/// Interactable interface. Every interactable in the scene (charging docks, switches, levers...) implements it.
+/// In practice, usually just inherit InteractableBase (implements this interface + focus management).
 /// </summary>
 public interface IInteractable
 {
-    /// 谁能交互（Player / Robot / Both）
+    /// Who can interact (Player / Robot / Both)
     InteractAccess Access { get; }
 
-    /// 物体当前是否开放交互（可被临时关闭，如未激活 / 已损坏）
+    /// Whether the object is currently open for interaction (can be temporarily disabled, e.g. inactive / broken)
     bool IsInteractable { get; }
 
-    /// 距离 / 朝向参照点
+    /// Reference point for distance / facing
     Transform InteractTransform { get; }
 
-    /// 综合判断：该类型的交互者现在能否使用本物体
+    /// Overall check: whether this type of interactor can use this object right now
     bool CanBeUsedBy(InteractorType who);
 
-    /// 进入焦点（满足范围 + 对准 + 权限）
+    /// Gained focus (in range + aimed + permission)
     void OnFocusEnter(Interactor interactor);
 
-    /// 离开焦点
+    /// Lost focus
     void OnFocusExit(Interactor interactor);
 
-    /// 按下交互键时触发（按键式交互用；持续式如充电可只看 IsFocused）
+    /// Fired when the interact key is pressed (for press-style interactions; continuous ones like charging can just check IsFocused)
     void OnInteract(Interactor interactor);
 }

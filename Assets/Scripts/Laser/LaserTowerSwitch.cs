@@ -3,57 +3,57 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// PROP　激光塔开关：玩家靠近 + 对准后按 F 开 / 关激光塔，可反复切换。
+/// PROP - Laser tower switch: player approaches + aims, presses F to turn the laser tower on / off; can toggle repeatedly.
 ///
-/// 提示文案随状态切换（InteractionPrompt 直出 InteractVerb 原文，所以这里存整句）：
-///   激光开着 → Press "F" to shut down LaserTower
-///   激光关了 → Press "F" to open LaserTower
+/// Prompt text changes with state (InteractionPrompt shows InteractVerb verbatim, so full sentences are stored here):
+///   Laser on  -> Press "F" to shut down LaserTower
+///   Laser off -> Press "F" to open LaserTower
 ///
-/// 两次切换之间强制最短间隔 toggleCooldown（默认 0.3 秒），避免连点导致
-/// LaserTower 反复 Destroy / Instantiate 激光实例。
+/// A minimum interval toggleCooldown (default 0.3s) is enforced between toggles, to avoid rapid clicks making
+/// LaserTower repeatedly Destroy / Instantiate laser instances.
 ///
-/// 用法：挂在控制台 / 闸刀模型上，把要控制的 LaserTower 拖进 towers。
-/// 留空则自动取本物体或父级上的 LaserTower。
+/// Usage: attach to the console / lever model and drag the LaserTowers to control into towers.
+/// If empty, LaserTower on this object or its parents is used automatically.
 /// </summary>
 public class LaserTowerSwitch : InteractableBase
 {
-    [Header("控制的激光塔（可多个：一个闸刀关一组塔）")]
-    [Tooltip("留空则自动取本物体 / 父级 / 子级上的 LaserTower")]
+    [Header("Controlled Laser Towers (multiple allowed: one lever turns off a group of towers)")]
+    [Tooltip("If empty, LaserTower on this object / parent / children is used automatically")]
     [SerializeField] private List<LaserTower> towers = new List<LaserTower>();
 
-    [Header("提示文案（整句，会原样显示）")]
-    [Tooltip("激光开着时显示——按下即关闭")]
+    [Header("Prompt Text (full sentence, shown as-is)")]
+    [Tooltip("Shown while the laser is on -- pressing turns it off")]
     public string verbWhenOn = "Press \"F\" to shut down LaserTower";
-    [Tooltip("激光关闭时显示——按下即开启")]
+    [Tooltip("Shown while the laser is off -- pressing turns it on")]
     public string verbWhenOff = "Press \"F\" to open LaserTower";
 
-    [Header("切换限制")]
-    [Tooltip("两次切换之间的最短间隔（秒），防连点")]
+    [Header("Toggle Limit")]
+    [Tooltip("Minimum interval between toggles (seconds), prevents spam clicking")]
     public float toggleCooldown = 0.3f;
 
-    [Header("初始状态")]
-    [Tooltip("开局激光是否处于开启状态")]
+    [Header("Initial State")]
+    [Tooltip("Whether the laser starts on")]
     public bool startOn = true;
 
-    [Header("事件（接灯光 / 音效 / 动画）")]
+    [Header("Events (hook up lights / SFX / animation)")]
     public UnityEvent onTurnedOn;
     public UnityEvent onTurnedOff;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (runtime, read-only)")]
     [SerializeField] private bool isOn = true;
-    [Tooltip("距离下次可切换还剩多少秒")]
+    [Tooltip("Seconds remaining until the next toggle is allowed")]
     [SerializeField] private float cooldownRemaining;
 
     private float nextToggleTime;
 
-    /// 激光当前是否开启
+    /// Whether the laser is currently on
     public bool IsOn => isOn;
-    /// 现在是否处于冷却中（按 F 无效）
+    /// Whether currently on cooldown (pressing F has no effect)
     public bool OnCooldown => Time.time < nextToggleTime;
 
     protected virtual void Reset()
     {
-        access = InteractAccess.PlayerOnly;   // 玩家专属开关
+        access = InteractAccess.PlayerOnly;   // Player-only switch
         interactVerb = verbWhenOn;
     }
 
@@ -61,9 +61,9 @@ public class LaserTowerSwitch : InteractableBase
     {
         CollectTowers();
 
-        // 接管开局状态：把塔自己的 fireOnStart 关掉，统一由本开关的 startOn 决定。
-        // Awake 一定早于任何 Start，所以塔的 Start 里不会再自行 Fire()，
-        // 不用担心两者的 Start 执行顺序。
+        // Take over the initial state: turn off the tower's own fireOnStart, so this switch's startOn decides.
+        // Awake always runs before any Start, so the tower's Start won't Fire() on its own,
+        // no need to worry about the Start order between the two.
         for (int i = 0; i < towers.Count; i++)
             if (towers[i] != null) towers[i].fireOnStart = false;
     }
@@ -76,19 +76,19 @@ public class LaserTowerSwitch : InteractableBase
 
     protected override void LateUpdate()
     {
-        base.LateUpdate();   // 基类镜像 IsFocused 到调试字段
+        base.LateUpdate();   // Base class mirrors IsFocused to the debug field
         cooldownRemaining = Mathf.Max(0f, nextToggleTime - Time.time);
     }
 
-    // 玩家按下 F
+    // Player pressed F
     public override void OnInteract(Interactor interactor)
     {
-        if (OnCooldown) return;      // 冷却中：这次按键直接吞掉
+        if (OnCooldown) return;      // On cooldown: swallow this key press
         nextToggleTime = Time.time + toggleCooldown;
         ApplyState(!isOn, fireEvents: true);
     }
 
-    /// <summary>外部也可直接调用（关卡脚本 / 电量机关联动）。会跳过冷却。</summary>
+    /// <summary>Can also be called externally (level scripts / energy mechanism links). Skips the cooldown.</summary>
     public void SetOn(bool on) => ApplyState(on, fireEvents: true);
 
     private void ApplyState(bool on, bool fireEvents)
@@ -101,7 +101,7 @@ public class LaserTowerSwitch : InteractableBase
             towers[i].SetFiring(on);
         }
 
-        // 提示文案跟着状态走（InteractionPrompt 每帧读 InteractVerb，改了即时生效）
+        // Prompt text follows state (InteractionPrompt reads InteractVerb every frame, changes apply immediately)
         interactVerb = on ? verbWhenOn : verbWhenOff;
 
         if (fireEvents)
@@ -121,12 +121,12 @@ public class LaserTowerSwitch : InteractableBase
 
         towers.AddRange(GetComponentsInChildren<LaserTower>(true));
         if (towers.Count == 0)
-            Debug.LogWarning("[LaserTowerSwitch] 没有找到要控制的 LaserTower，请手动拖进 towers", this);
+            Debug.LogWarning("[LaserTowerSwitch] No LaserTower found to control; please drag them into towers manually", this);
     }
 
     private void OnValidate()
     {
-        // 编辑期改文案时，Inspector 上的 interactVerb 同步预览
+        // When editing the text in the editor, sync interactVerb in the Inspector as a preview
         if (!Application.isPlaying) interactVerb = startOn ? verbWhenOn : verbWhenOff;
     }
 }

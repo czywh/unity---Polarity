@@ -1,24 +1,24 @@
 using UnityEngine;
 
 /// <summary>
-/// PROP-01 / ROBOT-08　充电桩：继承 InteractableBase。默认 RobotOnly。
+/// PROP-01 / ROBOT-08 Charging dock: inherits InteractableBase. RobotOnly by default.
 ///
-/// 普通模式：机器人靠近 + 相机对准（IsFocused）后按 F → OnInteract → 开始充电（自动充满）；
-///          失焦则中断；instantFull 勾选时按一下瞬间充满。
-/// 操作模式：Interactor 被冻结、相机是正交俯视，改由 RobotConsoleMover 用纯距离判定，
-///          调 ChargeDirect() 直接充电（见下方公开方法）。
+/// Normal mode: robot approaches + camera aims at it (IsFocused), press F -> OnInteract -> start charging (auto fills up);
+///          losing focus interrupts it; with instantFull checked, one press fills instantly.
+/// Operation Mode: Interactor is frozen and the camera is an orthographic top-down view, so RobotConsoleMover uses a pure distance check
+///          and calls ChargeDirect() to charge directly (see the public method below).
 /// </summary>
 public class ChargingDock : InteractableBase
 {
-    [Header("充电")]
-    [Tooltip("按下交互键后，自动充到满的速度（每秒充电量）；Instant Full 勾选时忽略")]
+    [Header("Charging")]
+    [Tooltip("Speed of auto-charging to full after pressing interact (energy per second); ignored when Instant Full is checked")]
     public float rechargeRate = 25f;
-    [Tooltip("勾选：按一下瞬间充满；不勾：按一下后按 rechargeRate 自动充到满")]
+    [Tooltip("Checked: one press fills instantly; unchecked: one press then auto-charges to full at rechargeRate")]
     public bool instantFull = false;
 
-    [Header("调试（运行时只读）")]
-    [SerializeField] private bool charging;        // 是否正在自动充电
-    [SerializeField] private float robotEnergy01;  // 当前充电机器人的电量比例
+    [Header("Debug (read-only at runtime)")]
+    [SerializeField] private bool charging;        // Whether currently auto-charging
+    [SerializeField] private float robotEnergy01;  // Energy fraction of the robot currently charging
 
     protected virtual void Reset()
     {
@@ -28,7 +28,7 @@ public class ChargingDock : InteractableBase
 
     protected virtual void Update()
     {
-        // 离开充电桩（失焦）→ 中断本次充电
+        // Leaving the charging dock (lost focus) -> interrupt this charge
         if (!IsFocused) { charging = false; robotEnergy01 = 0f; return; }
 
         var energy = GetEnergy();
@@ -40,7 +40,7 @@ public class ChargingDock : InteractableBase
         energy.Recharge(rechargeRate * Time.deltaTime);
     }
 
-    // 普通模式：按下交互键(F) → 开始充电 / 瞬间充满
+    // Normal mode: press interact (F) -> start charging / fill instantly
     public override void OnInteract(Interactor interactor)
     {
         var energy = GetEnergy();
@@ -51,8 +51,8 @@ public class ChargingDock : InteractableBase
     }
 
     /// <summary>
-    /// 供操作模式等直接充电（不经 Interactor 焦点）。每帧调用一次；
-    /// instantFull 时一次灌满并返回 false；否则按 rechargeRate 充，充满返回 false，否则 true。
+    /// Direct charging for Operation Mode etc. (bypasses Interactor focus). Call once per frame;
+    /// with instantFull it fills in one go and returns false; otherwise charges at rechargeRate, returns false when full, else true.
     /// </summary>
     public bool ChargeDirect(EnergySystem energy)
     {

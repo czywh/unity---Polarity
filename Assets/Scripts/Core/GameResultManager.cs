@@ -2,38 +2,38 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// CORE　通关流程编排（单例）。LevelGoal 触发 Win() 后：
-///   1) LevelStats.Stop() 冻结用时 / 死亡 / 耗电；
-///   2) CharacterSwitcher.SetExternallyFrozen(true) 收走所有控制；若在操作模式中先 Exit()；
-///   3) 光标解锁；timeScale = 0 让敌人 / 平台 / 激光全部停下；
-///   4) GameResultUI.Show() 弹结算面板。
-/// 面板上两个按钮回调到这里：Restart() 重载本关，NextLevel() 进下一关（没有则回主菜单）。
+/// CORE  Level-clear flow orchestration (singleton). After LevelGoal triggers Win():
+///   1) LevelStats.Stop() freezes time / deaths / energy used;
+///   2) CharacterSwitcher.SetExternallyFrozen(true) takes away all control; if in Operation Mode, Exit() first;
+///   3) Unlock the cursor; timeScale = 0 so enemies / platforms / lasers all stop;
+///   4) GameResultUI.Show() pops up the results panel.
+/// The panel's two buttons call back here: Restart() reloads this level, NextLevel() goes to the next level (or main menu if none).
 ///
-/// 零配置：LevelGoal 会 GetOrCreate()。想改下一关的名字 / 主菜单名字，手动放一个到场景里改 Inspector。
+/// Zero config: LevelGoal calls GetOrCreate(). To change the next level's name / main menu name, place one in the scene manually and edit it in the Inspector.
 /// </summary>
 [DisallowMultipleComponent]
 public class GameResultManager : MonoBehaviour
 {
     public static GameResultManager Instance { get; private set; }
 
-    [Header("关卡流转")]
-    [Tooltip("下一关的场景名。留空 = 按 Build Settings 顺序取下一个；再没有就回主菜单")]
+    [Header("Level Flow")]
+    [Tooltip("Scene name of the next level. Empty = take the next one in Build Settings order; if none, go back to the main menu")]
     public string nextSceneName = "";
-    [Tooltip("主菜单场景名（没有下一关时 NEXT 按钮跳这里）")]
+    [Tooltip("Main menu scene name (the NEXT button goes here when there's no next level)")]
     public string mainMenuSceneName = "Start";
 
-    [Header("胜利时")]
-    [Tooltip("胜利后把 Time.timeScale 置 0（敌人、平台、激光全部停下）。切场景前会自动恢复为 1")]
+    [Header("On Victory")]
+    [Tooltip("Set Time.timeScale to 0 after victory (enemies, platforms, lasers all stop). Automatically restored to 1 before switching scenes")]
     public bool pauseTimeOnWin = true;
-    [Tooltip("胜利后解锁并显示鼠标（点结算按钮需要）")]
+    [Tooltip("Unlock and show the mouse after victory (needed to click the result buttons)")]
     public bool showCursorOnWin = true;
 
-    [Header("引用（留空自动查找 / 自动创建）")]
+    [Header("References (auto-found / auto-created if left empty)")]
     [SerializeField] private GameResultUI resultUI;
     [SerializeField] private CharacterSwitcher switcher;
     [SerializeField] private OperationModeController operationMode;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (runtime read-only)")]
     [SerializeField] private bool wonReadout;
 
     public bool HasWon { get; private set; }
@@ -57,7 +57,7 @@ public class GameResultManager : MonoBehaviour
         if (resultUI == null) resultUI = FindFirstObjectByType<GameResultUI>(FindObjectsInactive.Include);
         if (resultUI == null) resultUI = GameResultUI.CreateDefault();
 
-        LevelStats.GetOrCreate();   // 确保统计从关卡一开始就在跑
+        LevelStats.GetOrCreate();   // Make sure stats are running from the very start of the level
     }
 
     private void OnDestroy()
@@ -65,7 +65,7 @@ public class GameResultManager : MonoBehaviour
         if (Instance == this) Instance = null;
     }
 
-    /// <summary>胜利入口。LevelGoal 调；也可以手动调（比如调试）</summary>
+    /// <summary>Victory entry point. Called by LevelGoal; can also be called manually (e.g. for debugging)</summary>
     public void Win(LevelGoal goal = null)
     {
         if (HasWon) return;
@@ -76,10 +76,10 @@ public class GameResultManager : MonoBehaviour
         var stats = LevelStats.GetOrCreate();
         stats.Stop();
 
-        // 若还在操作模式里（理论上机器人在操作模式下够不到终点交互，但保险）
+        // If still in Operation Mode (in theory the robot can't reach the goal interaction in Operation Mode, but just in case)
         if (operationMode != null && operationMode.InOperationMode) operationMode.Exit();
 
-        // 收走所有角色控制（不禁用组件本身，只让切换器裁决为"全冻结"）
+        // Take away all character control (don't disable the components themselves, just let the switcher rule "all frozen")
         if (switcher != null) switcher.SetExternallyFrozen(true);
 
         if (showCursorOnWin)
@@ -91,15 +91,15 @@ public class GameResultManager : MonoBehaviour
         if (resultUI != null)
             resultUI.Show(stats, HasNextScene(out _) ? "NEXT LEVEL" : "MAIN MENU");
         else
-            Debug.LogWarning("[结算] 没有 GameResultUI，胜利了但没有面板", this);
+            Debug.LogWarning("[Result] No GameResultUI; won but there's no panel", this);
 
         if (pauseTimeOnWin) Time.timeScale = 0f;
-        Debug.Log($"[结算] 胜利  用时={stats.FormatTime()}  死亡={stats.Deaths}  耗电={stats.EnergyUsed:F1}", this);
+        Debug.Log($"[Result] Victory  time={stats.FormatTime()}  deaths={stats.Deaths}  energyUsed={stats.EnergyUsed:F1}", this);
     }
 
-    // ── 按钮回调 ──
+    // -- Button callbacks --
 
-    /// <summary>重新开始本关</summary>
+    /// <summary>Restart this level</summary>
     public void Restart()
     {
         Time.timeScale = 1f;
@@ -107,7 +107,7 @@ public class GameResultManager : MonoBehaviour
         SceneManager.LoadScene(active.buildIndex);
     }
 
-    /// <summary>进入下一关；没有下一关就回主菜单</summary>
+    /// <summary>Go to the next level; if there's none, go back to the main menu</summary>
     public void NextLevel()
     {
         Time.timeScale = 1f;
@@ -117,19 +117,19 @@ public class GameResultManager : MonoBehaviour
             SceneManager.LoadScene(mainMenuSceneName);
         else
         {
-            Debug.LogWarning("[结算] 既没有下一关也找不到主菜单场景，改为重载本关", this);
+            Debug.LogWarning("[Result] No next level and no main menu scene found; reloading this level instead", this);
             Restart();
         }
     }
 
-    /// 有没有下一关：显式名字 > Build Settings 下一个索引（跳过主菜单本身）
+    /// Whether there's a next level: explicit name > next Build Settings index (skipping the main menu itself)
     private bool HasNextScene(out string sceneName)
     {
         sceneName = null;
         if (!string.IsNullOrEmpty(nextSceneName))
         {
             if (Application.CanStreamedLevelBeLoaded(nextSceneName)) { sceneName = nextSceneName; return true; }
-            Debug.LogWarning($"[结算] nextSceneName \"{nextSceneName}\" 不在 Build Settings 里", this);
+            Debug.LogWarning($"[Result] nextSceneName \"{nextSceneName}\" is not in Build Settings", this);
             return false;
         }
         int idx = SceneManager.GetActiveScene().buildIndex + 1;

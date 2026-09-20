@@ -1,75 +1,75 @@
 using UnityEngine;
 
 /// <summary>
-/// 寻路网格：在世界 XZ 平面铺格子，用体积检测（OverlapBox）判定每格可走性 —— 
-/// 只有格子中心的竖直检测盒碰到 bridge 层的【实心碰撞体】(忽略 Trigger) 才可走。
+/// Pathfinding grid: lays grid cells on the world XZ plane and uses volume checks (OverlapBox) to decide walkability per cell -- 
+/// a cell is walkable only if the vertical check box at its center hits a [solid collider] on the bridge layer (Triggers ignored).
 ///
-/// 更新时机：事件驱动 + 3 秒兜底。任何会改变桥位置的事件调 RequestRescan()，
-/// 下一帧统一扫一次；平时不扫，省性能。适配 bridge 上下 / 左右移动。
+/// Update timing: event-driven + 3 s fallback. Any event that changes a bridge's position calls RequestRescan(),
+/// and one scan runs next frame; no scanning otherwise, to save performance. Supports bridges moving up/down / left/right.
 /// </summary>
 [ExecuteAlways]
 public class GridSystem : MonoBehaviour
 {
-    [Header("网格定义（世界 XZ 平面）")]
-    [Tooltip("网格最小角的世界坐标（X 最小、Z 最小的那个角）")]
+    [Header("Grid Definition (world XZ plane)")]
+    [Tooltip("World position of the grid's minimum corner (the corner with smallest X and Z)")]
     public Vector3 origin = new Vector3(-109.5f, 2.17f, -149.66f);
-    [Tooltip("每个格子的边长（世界单位）")]
+    [Tooltip("Side length of each grid cell (world units)")]
     public float cellSize = 2f;
-    [Tooltip("列数：X 方向格子数")]
+    [Tooltip("Columns: number of cells along X")]
     public int cols = 45;
-    [Tooltip("行数：Z 方向格子数")]
+    [Tooltip("Rows: number of cells along Z")]
     public int rows = 55;
 
-    [Header("可走性检测（OverlapBox）")]
-    [Tooltip("bridge 所在层（只检测这些层）")]
+    [Header("Walkability Check (OverlapBox)")]
+    [Tooltip("Layers the bridges are on (only these layers are checked)")]
     public LayerMask walkableMask;
-    [Tooltip("检测盒高度：罩住 bridge 上下移动的行程 + 余量")]
+    [Tooltip("Check box height: covers the bridge's vertical travel + margin")]
     public float checkHeight = 2f;
-    [Tooltip("检测盒竖直中心相对格心的偏移（正=往上抬）")]
+    [Tooltip("Vertical offset of the check box center from the cell center (positive = up)")]
     public float checkYOffset = 0f;
-    [Tooltip("检测盒 XZ 占格子的比例（略小于 1 避免蹭到隔壁格）")]
+    [Tooltip("Fraction of the cell the check box covers in XZ (slightly under 1 to avoid touching neighbors)")]
     [Range(0.1f, 1f)] public float cellFillRatio = 0.9f;
-    [Tooltip("移动期间的高频扫描间隔（秒）")]
+    [Tooltip("High-frequency scan interval while moving (seconds)")]
     public float activeRescanInterval = 0.2f;
-    [Tooltip("兜底轮询间隔（秒），静止时用它兜住漏掉的事件")]
+    [Tooltip("Fallback polling interval (seconds), used while idle to catch missed events")]
     public float fallbackRescanInterval = 0.6f;
-    [Tooltip("收到移动通知后，再维持多久算\"移动活跃期\"（秒），期间用高频扫描")]
+    [Tooltip("After a move notification, how long the \"movement active period\" lasts (seconds); high-frequency scanning is used during it")]
     public float activeLinger = 0.4f;
 
-    [Header("可视化")]
+    [Header("Visualization")]
     public bool drawGrid = true;
-    [Tooltip("画网格线")]
+    [Tooltip("Draw grid lines")]
     public Color lineColor = new Color(0.2f, 0.9f, 1f, 0.35f);
-    [Tooltip("可走格填充色（运行时按扫描结果）")]
+    [Tooltip("Fill color for walkable cells (from scan results at runtime)")]
     public Color walkableColor = new Color(0.2f, 1f, 0.3f, 0.35f);
-    [Tooltip("不可走格填充色")]
+    [Tooltip("Fill color for unwalkable cells")]
     public Color blockedColor = new Color(1f, 0.2f, 0.2f, 0.25f);
-    [Tooltip("画格心检测盒（方便调 checkHeight / checkYOffset 让盒子罩住桥）")]
+    [Tooltip("Draw the cell-center check boxes (helps tune checkHeight / checkYOffset so the box covers the bridge)")]
     public bool drawCheckBoxes = false;
     public Color checkBoxColor = new Color(1f, 0.9f, 0.2f, 0.9f);
 
-    [Header("运行时可视化（Game 视图也可见）")]
-    [Tooltip("运行时在 Game 视图画可走/不可走格子（调试用，正式发布关掉）")]
+    [Header("Runtime Visualization (also visible in Game view)")]
+    [Tooltip("Draw walkable/unwalkable cells in the Game view at runtime (debug only, turn off for release)")]
     public bool runtimeDebugDraw = false;
 
     private Material glMat;
 
-    // 每格是否可走
+    // Whether each cell is walkable
     public bool[,] Walkable { get; private set; }
 
-    /// 场景单例（方便移动组件通知）。假定场景只有一个网格。
+    /// Scene singleton (so movers can notify easily). Assumes one grid per scene.
     public static GridSystem Instance { get; private set; }
 
     private bool needsRescan;
-    private float nextScan;         // 下次扫描时间
-    private float activeUntil;      // 移动活跃期结束时间
+    private float nextScan;         // Next scan time
+    private float activeUntil;      // End time of the movement active period
 
-    // 网格尺寸
+    // Grid size
     public float Width => cols * cellSize;
     public float Depth => rows * cellSize;
     public float GridY => origin.y;
 
-    // —— 坐标映射 ——
+    // -- Coordinate mapping --
     public Vector2Int WorldToCell(Vector3 world)
     {
         int x = Mathf.FloorToInt((world.x - origin.x) / cellSize);
@@ -84,18 +84,18 @@ public class GridSystem : MonoBehaviour
     public bool IsWalkable(int x, int z) => InBounds(x, z) && Walkable != null && Walkable[x, z];
     public bool IsWalkable(Vector2Int c) => IsWalkable(c.x, c.y);
 
-    // —— 更新调度 ——
-    /// 立即（下一帧）重扫一次。适合"一次性"事件（进出操作模式、点击、充满等）。
+    // -- Update scheduling --
+    /// Rescan once immediately (next frame). For "one-off" events (entering/exiting Operation Mode, clicks, fully charged, etc.).
     public void RequestRescan() => needsRescan = true;
 
-    /// 移动中每帧调用：进入"移动活跃期"，期间按 activeRescanInterval 高频扫描；
-    /// 停止调用 activeLinger 秒后自动回落到 3s 兜底。
+    /// Call every frame while moving: enters the "movement active period", scanning at activeRescanInterval;
+    /// activeLinger seconds after calls stop, it falls back to the 3 s fallback.
     public void NotifyMoving()
     {
         activeUntil = Time.time + activeLinger;
     }
 
-    /// 当前是否处于移动活跃期
+    /// Whether currently in the movement active period
     public bool IsActive => Time.time <= activeUntil;
 
     private void OnEnable()
@@ -113,7 +113,7 @@ public class GridSystem : MonoBehaviour
 
     private void Update()
     {
-        // 一次性请求：下一帧立即扫
+        // One-off request: scan immediately next frame
         if (needsRescan)
         {
             needsRescan = false;
@@ -124,7 +124,7 @@ public class GridSystem : MonoBehaviour
 
         if (!Application.isPlaying) return;
 
-        // 移动活跃期用高频间隔，否则用兜底间隔
+        // High-frequency interval during the movement active period, fallback interval otherwise
         if (Time.time >= nextScan)
         {
             Rescan();
@@ -138,7 +138,7 @@ public class GridSystem : MonoBehaviour
             Walkable = new bool[Mathf.Max(1, cols), Mathf.Max(1, rows)];
     }
 
-    /// 立即重扫全部格子可走性（体积检测）
+    /// Immediately rescan walkability of all cells (volume check)
     public void Rescan()
     {
         EnsureArray();
@@ -152,7 +152,7 @@ public class GridSystem : MonoBehaviour
             {
                 Vector3 center = CellToWorld(x, z);
                 center.y += checkYOffset;
-                // 只认实心碰撞体（QueryTriggerInteraction.Ignore）：没充电变 Trigger 的桥不算可走
+                // Only solid colliders count (QueryTriggerInteraction.Ignore): uncharged bridges that became Triggers are not walkable
                 bool hit = Physics.CheckBox(center, halfExtents, Quaternion.identity,
                                             walkableMask, QueryTriggerInteraction.Ignore);
                 Walkable[x, z] = hit;
@@ -160,7 +160,7 @@ public class GridSystem : MonoBehaviour
         }
     }
 
-    // —— 运行时在 Game 视图画格子（GL 即时绘制）——
+    // -- Draw cells in the Game view at runtime (GL immediate mode) --
     private void EnsureGLMat()
     {
         if (glMat != null) return;
@@ -205,7 +205,7 @@ public class GridSystem : MonoBehaviour
         if (!drawGrid) return;
         float y = GridY;
 
-        // 网格线
+        // Grid lines
         Gizmos.color = lineColor;
         for (int x = 0; x <= cols; x++)
             Gizmos.DrawLine(new Vector3(origin.x + x * cellSize, y, origin.z),
@@ -214,7 +214,7 @@ public class GridSystem : MonoBehaviour
             Gizmos.DrawLine(new Vector3(origin.x, y, origin.z + z * cellSize),
                             new Vector3(origin.x + Width, y, origin.z + z * cellSize));
 
-        // 外框
+        // Outer border
         Gizmos.color = Color.white;
         Vector3 o = origin;
         Gizmos.DrawLine(o, o + new Vector3(Width, 0, 0));
@@ -222,7 +222,7 @@ public class GridSystem : MonoBehaviour
         Gizmos.DrawLine(o + new Vector3(Width, 0, Depth), o + new Vector3(0, 0, Depth));
         Gizmos.DrawLine(o + new Vector3(0, 0, Depth), o);
 
-        // 可走 / 不可走 填充（有扫描结果才画）
+        // Walkable / unwalkable fill (only drawn when scan results exist)
         if (Walkable != null && Walkable.GetLength(0) == cols && Walkable.GetLength(1) == rows)
         {
             Vector3 quad = new Vector3(cellSize * 0.9f, 0.01f, cellSize * 0.9f);
@@ -234,7 +234,7 @@ public class GridSystem : MonoBehaviour
                 }
         }
 
-        // 检测盒可视化（调高度用）
+        // Check box visualization (for tuning height)
         if (drawCheckBoxes)
         {
             Gizmos.color = checkBoxColor;

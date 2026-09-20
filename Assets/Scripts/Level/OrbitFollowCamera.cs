@@ -1,65 +1,65 @@
 using UnityEngine;
 
 /// <summary>
-/// 环绕跟随相机：合并了
-///   · HorizontalCamera 的「平滑跟随目标 + SetTarget 切换焦点」
-///   · FreeLookCamera 的「鼠标环绕(水平+垂直) + 滚轮缩放 + 遮挡规避」
+/// Orbit follow camera: combines
+///   - HorizontalCamera's "smooth target follow + SetTarget focus switching"
+///   - FreeLookCamera's "mouse orbit (horizontal + vertical) + scroll-wheel zoom + occlusion avoidance"
 ///
-/// 挂在 Main Camera 上，取代 HorizontalCamera。
-/// 角色切换仍由 CharacterSwitcher 调用 SetTarget 完成（接口不变）。
+/// Attach to Main Camera; replaces HorizontalCamera.
+/// Character switching is still done by CharacterSwitcher calling SetTarget (interface unchanged).
 /// </summary>
 public class OrbitFollowCamera : MonoBehaviour
 {
-    [Header("跟随目标")]
+    [Header("Follow Target")]
     public Transform target;
-    [Tooltip("注视点相对目标的偏移（一般抬到胸口/头部高度）")]
+    [Tooltip("Look-at offset relative to the target (usually raised to chest/head height)")]
     public Vector3 targetOffset = new Vector3(0f, 1.5f, 0f);
-    [Tooltip("焦点跟随平滑度：切换角色时镜头滑向新目标的速度")]
+    [Tooltip("Focus follow smoothing: how fast the camera slides to the new target when switching characters")]
     public float followSmooth = 8f;
 
-    [Header("鼠标环绕")]
-    [Tooltip("勾上=按住右键拖动才环绕（推荐，避免和光标瞄准冲突）；取消=移动鼠标即环绕(FreeLook 风格)")]
+    [Header("Mouse Orbit")]
+    [Tooltip("Checked = orbit only while dragging with right mouse held (recommended, avoids conflict with cursor aiming); unchecked = orbit on mouse move (FreeLook style)")]
     public bool holdRightMouseToRotate = true;
-    public float xSpeed = 200f;     // 水平灵敏度
-    public float ySpeed = 120f;     // 垂直灵敏度
-    public float yMinLimit = -20f;  // 俯仰下限
-    public float yMaxLimit = 70f;   // 俯仰上限
+    public float xSpeed = 200f;     // Horizontal sensitivity
+    public float ySpeed = 120f;     // Vertical sensitivity
+    public float yMinLimit = -20f;  // Min pitch
+    public float yMaxLimit = 70f;   // Max pitch
     public bool invertY = false;
     [Range(0f, 0.3f)] public float rotationSmoothTime = 0.08f;
 
-    [Header("距离 / 缩放")]
+    [Header("Distance / Zoom")]
     public float distance = 6f;
     public float minDistance = 3f;
     public float maxDistance = 12f;
     public float zoomSpeed = 2f;
 
-    [Header("遮挡规避")]
-    [Tooltip("相机与角色之间有障碍时，把相机拉到障碍前，避免穿墙")]
+    [Header("Occlusion Avoidance")]
+    [Tooltip("When there's an obstacle between the camera and the character, pull the camera in front of it to avoid clipping through walls")]
     public bool avoidOcclusion = true;
-    [Tooltip("遮挡检测层；建议只勾环境/地形层，别勾角色层")]
+    [Tooltip("Occlusion check layers; ideally only check environment/terrain layers, not character layers")]
     public LayerMask occlusionMask = ~0;
     public float occlusionPadding = 0.2f;
 
-    [Header("瞄准模式（TPS，由 RobotAimController 控制）")]
+    [Header("Aim Mode (TPS, controlled by RobotAimController)")]
     public bool aimMode = false;
-    [Tooltip("瞄准时相机贴到角色身后的距离（更近）")]
+    [Tooltip("Distance the camera sits behind the character while aiming (closer)")]
     public float aimDistance = 3f;
-    [Tooltip("进入瞄准时先平缓转到身后，转到此角度内视为到位（然后才拉近）")]
+    [Tooltip("On entering aim, first turn smoothly behind the character; within this angle counts as arrived (then zoom in)")]
     public float aimAlignAngle = 3f;
-    [Tooltip("进入瞄准转向的最长时间（兜底，防止一直转不到位）")]
+    [Tooltip("Max time for the aim-entry turn (fallback, prevents never arriving)")]
     public float aimEnterMaxTime = 0.8f;
 
-    [Header("开局初始视角（对应你想要的机位）")]
-    [Tooltip("勾上：Start 时用下面的初始 yaw/pitch/距离，而不是读相机当前 Transform 的角度")]
+    [Header("Initial View at Start (your desired viewpoint)")]
+    [Tooltip("Checked: at Start use the initial yaw/pitch/distance below instead of reading the camera's current Transform angles")]
     public bool useInitialView = false;
-    [Tooltip("初始水平朝向（= 你想要机位的 Rotation Y）")]
+    [Tooltip("Initial horizontal heading (= Rotation Y of your desired viewpoint)")]
     public float initialYaw = 180f;
-    [Tooltip("初始俯仰（= 你想要机位的 Rotation X）")]
+    [Tooltip("Initial pitch (= Rotation X of your desired viewpoint)")]
     public float initialPitch = 10.84f;
-    [Tooltip("初始距离（相机离角色多远）")]
+    [Tooltip("Initial distance (how far the camera is from the character)")]
     public float initialDistance = 6f;
 
-    // —— 内部状态 ——
+    // -- Internal state --
     private float yaw, pitch;
     private float currentDistance, desiredDistance, distVel;
     private Quaternion currentRot, desiredRot;
@@ -124,11 +124,11 @@ public class OrbitFollowCamera : MonoBehaviour
 
         desiredRot = Quaternion.Euler(pitch, yaw, 0f);
 
-        // 帧率无关的平滑（rotationSmoothTime 越大越柔）
+        // Frame-rate independent smoothing (larger rotationSmoothTime = softer)
         float t = rotationSmoothTime > 0f ? 1f - Mathf.Exp(-Time.deltaTime / rotationSmoothTime) : 1f;
         currentRot = Quaternion.Slerp(currentRot, desiredRot, t);
 
-        // 进入瞄准：先平缓转到身后，转到位（或超时）后才结束进入阶段
+        // Entering aim: first turn smoothly behind the character; the entry phase ends only once arrived (or timed out)
         if (aimEntering)
         {
             aimEnterTimer += Time.deltaTime;
@@ -139,20 +139,20 @@ public class OrbitFollowCamera : MonoBehaviour
 
     private void UpdatePosition()
     {
-        // 进入瞄准：先转到身后（保持原距离），转到位后再拉近到 aimDistance
+        // Entering aim: first turn behind (keeping the original distance), then zoom in to aimDistance once arrived
         float distTarget = (aimMode && !aimEntering) ? aimDistance : desiredDistance;
         currentDistance = Mathf.SmoothDamp(currentDistance, distTarget, ref distVel, rotationSmoothTime + 0.05f);
 
-        // 焦点平滑：切换目标时镜头滑过去（HorizontalCamera 的那套手感）
+        // Focus smoothing: camera slides over when switching targets (the HorizontalCamera feel)
         Vector3 focusTarget = FocusPoint();
         if (!focusInit) { smoothedFocus = focusTarget; focusInit = true; }
         float ft = 1f - Mathf.Exp(-followSmooth * Time.deltaTime);
         smoothedFocus = Vector3.Lerp(smoothedFocus, focusTarget, ft);
 
-        // 环绕定位：焦点 - 旋转×前方×距离（FreeLook 的那套数学）
+        // Orbit positioning: focus - rotation x forward x distance (the FreeLook math)
         Vector3 desiredPos = smoothedFocus - currentRot * Vector3.forward * currentDistance;
 
-        // 遮挡规避：射线从焦点打向相机，撞到障碍就把相机拉到障碍前
+        // Occlusion avoidance: ray from focus toward the camera; if it hits an obstacle, pull the camera in front of it
         if (avoidOcclusion)
         {
             Vector3 dir = desiredPos - smoothedFocus;
@@ -170,8 +170,8 @@ public class OrbitFollowCamera : MonoBehaviour
     }
 
     /// <summary>
-    /// 切换跟随目标（供 CharacterSwitcher 调用）。
-    /// instant=true 立即对准（初始化）；false 平滑滑向新目标（角色切换）。
+    /// Switch the follow target (called by CharacterSwitcher).
+    /// instant=true snaps immediately (initialization); false slides smoothly to the new target (character switch).
     /// </summary>
     public void SetTarget(Transform newTarget, bool instant = false)
     {
@@ -196,7 +196,7 @@ public class OrbitFollowCamera : MonoBehaviour
         Gizmos.DrawWireSphere(target.position + targetOffset, 0.25f);
     }
 
-    /// 相机水平朝向（投影到地面）—— 供机器人瞄准时面向准星方向
+    /// Camera horizontal heading (projected onto the ground) -- used so the robot faces the crosshair direction while aiming
     public Vector3 AimForward
     {
         get
@@ -207,20 +207,20 @@ public class OrbitFollowCamera : MonoBehaviour
         }
     }
 
-    /// 瞄准是否已转到位（到位后才拉近、才让角色朝向随相机）
+    /// Whether the aim turn has arrived (only then zoom in and let the character face with the camera)
     public bool AimReady => aimMode && !aimEntering;
 
-    /// 进入瞄准：把目标朝向设到角色身后，让相机平缓 Slerp 转过去（不吸附），到位后自动拉近
+    /// Enter aim: set the target rotation behind the character and let the camera Slerp there smoothly (no snapping); zooms in automatically once arrived
     public void BeginAim(float behindYaw)
     {
         yaw = behindYaw;
-        desiredRot = Quaternion.Euler(pitch, yaw, 0f);   // 只设目标，currentRot 平滑转过去
+        desiredRot = Quaternion.Euler(pitch, yaw, 0f);   // Only set the target; currentRot turns there smoothly
         aimMode = true;
         aimEntering = true;
         aimEnterTimer = 0f;
     }
 
-    /// 退出瞄准
+    /// Exit aim
     public void EndAim()
     {
         aimMode = false;

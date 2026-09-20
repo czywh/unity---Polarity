@@ -1,16 +1,16 @@
 using UnityEngine;
 
 /// <summary>
-/// 装饰用自转：绕指定轴（默认 Y）缓慢自转。挂在转向器或它的装饰网格上均可，
-/// 因为 LaserRedirector 用"初始朝向"算激光方向，所以本体自转不影响激光方向。
+/// Decorative spin: slowly rotates around a given axis (Y by default). Can go on the redirector or its decorative mesh,
+/// since LaserRedirector computes the laser direction from its "initial facing", so spinning does not affect the laser direction.
 /// </summary>
 public class SpinY : MonoBehaviour
 {
-    [Tooltip("每秒自转角度（度）")]
+    [Tooltip("Spin angle per second (degrees)")]
     public float degreesPerSecond = 30f;
-    [Tooltip("自转轴")]
+    [Tooltip("Spin axis")]
     public Vector3 axis = Vector3.up;
-    [Tooltip("本地轴 / 世界轴")]
+    [Tooltip("Local axis / world axis")]
     public Space space = Space.Self;
 
     private void Update()

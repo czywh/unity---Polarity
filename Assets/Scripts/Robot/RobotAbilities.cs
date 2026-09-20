@@ -1,22 +1,22 @@
 using UnityEngine;
 
-// 机器人能力接口：实现待后续模块完成（电子领域 / 导弹）。
-// RobotController / RobotAimController 通过接口调用，实现为 null 时自动跳过。
+// Robot ability interfaces: implementations pending later modules (electric field / missiles).
+// RobotController / RobotAimController call through these interfaces; skipped automatically when the implementation is null.
 
-/// <summary>ROBOT-04　开关即时电子领域</summary>
+/// <summary>ROBOT-04  Toggle instant electric field</summary>
 public interface IFieldEmitter
 {
     void ToggleField();
 }
 
-/// <summary>ROBOT-05　发射导弹</summary>
+/// <summary>ROBOT-05  Fire missile</summary>
 public interface IMissileLauncher
 {
-    void TryFire();                    // 朝正前方
-    void TryFire(Vector3 direction);   // 朝指定方向（瞄准准星方向）
+    void TryFire();                    // straight ahead
+    void TryFire(Vector3 direction);   // in a given direction (crosshair direction)
 }
 
-/// <summary>ROBOT-07　G 键回收鼠标附近的导弹领域</summary>
+/// <summary>ROBOT-07  G key recalls missile fields near the mouse</summary>
 public interface IMissileRecaller
 {
     void TryRecall();

@@ -3,9 +3,9 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// 编辑器工具：批量缩放选中物体（含子物体）的 BoxCollider size。
-/// 菜单 Tools ▸ Colliders ▸ Scale Box Colliders…
-/// 用于把偏大的 bridge 碰撞体统一按比例收缩，支持 Undo。
+/// Editor tool: batch-scale the BoxCollider size of selected objects (including children).
+/// Menu Tools > Colliders > Scale Box Colliders...
+/// Used to uniformly shrink oversized bridge colliders by ratio; supports Undo.
 /// </summary>
 public class BoxColliderResizer : EditorWindow
 {
@@ -13,30 +13,30 @@ public class BoxColliderResizer : EditorWindow
     private bool includeChildren = true;
     private bool alsoShrinkCenterProportionally = false;
 
-    [MenuItem("Tools/Colliders/Scale Box Colliders…")]
+    [MenuItem("Tools/Colliders/Scale Box Colliders...")]
     private static void Open() => GetWindow<BoxColliderResizer>("Scale Box Colliders");
 
     private void OnGUI()
     {
         EditorGUILayout.HelpBox(
-            "对【选中物体】(可含子物体) 的所有 BoxCollider 按比例缩放 size。\n" +
-            "例：XZ 填 0.8 = 水平方向缩到 80%，Y 填 1 = 高度不变。\n" +
-            "支持 Undo（Ctrl/Cmd+Z 撤销）。", MessageType.Info);
+            "Scales the size of all BoxColliders on [selected objects] (optionally including children) by ratio.\n" +
+            "E.g.: XZ = 0.8 shrinks horizontally to 80%, Y = 1 keeps height unchanged.\n" +
+            "Supports Undo (Ctrl/Cmd+Z).", MessageType.Info);
 
-        scale = EditorGUILayout.Vector3Field("缩放比例 (乘到 size 上)", scale);
-        includeChildren = EditorGUILayout.Toggle("包含子物体", includeChildren);
-        alsoShrinkCenterProportionally = EditorGUILayout.Toggle("同时按比例缩 center", alsoShrinkCenterProportionally);
+        scale = EditorGUILayout.Vector3Field("Scale (multiplied onto size)", scale);
+        includeChildren = EditorGUILayout.Toggle("Include Children", includeChildren);
+        alsoShrinkCenterProportionally = EditorGUILayout.Toggle("Also Scale Center Proportionally", alsoShrinkCenterProportionally);
 
         int count = CountTargets();
-        EditorGUILayout.LabelField($"将影响 {count} 个 BoxCollider");
+        EditorGUILayout.LabelField($"Will affect {count} BoxCollider(s)");
 
         using (new EditorGUI.DisabledScope(count == 0))
         {
-            if (GUILayout.Button("应用缩放", GUILayout.Height(30)))
+            if (GUILayout.Button("Apply Scale", GUILayout.Height(30)))
                 Apply();
         }
 
-        if (GUILayout.Button("重置比例为 1"))
+        if (GUILayout.Button("Reset Scale to 1"))
             scale = Vector3.one;
     }
 
@@ -71,7 +71,7 @@ public class BoxColliderResizer : EditorWindow
                 EditorUtility.SetDirty(c);
             }
         }
-        Debug.Log($"[BoxColliderResizer] 已缩放 {CountTargets()} 个 BoxCollider，比例 {scale}");
+        Debug.Log($"[BoxColliderResizer] Scaled {CountTargets()} BoxCollider(s), scale {scale}");
     }
 }
 #endif

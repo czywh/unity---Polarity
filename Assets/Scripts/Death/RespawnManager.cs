@@ -2,9 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 复活点管理器（单例）。
-/// 为每个角色类型单独保存一份复活点（位置 + 朝向），
-/// player 和 robot 互不影响，各自记录自己上一次经过的检查点。
+/// Respawn point manager (singleton).
+/// Stores a separate respawn point (position + rotation) per character type;
+/// player and robot don't affect each other, each recording the last checkpoint it passed.
 /// </summary>
 public class RespawnManager : MonoBehaviour
 {
@@ -17,7 +17,7 @@ public class RespawnManager : MonoBehaviour
         public bool valid;
     }
 
-    // 每个角色一条复活记录；后到的检查点会覆盖旧的，实现“实时更新”
+    // One respawn record per character; a later checkpoint overwrites the old one, giving "live updates"
     private readonly Dictionary<CharacterType, RespawnData> respawnPoints
         = new Dictionary<CharacterType, RespawnData>();
 
@@ -31,7 +31,7 @@ public class RespawnManager : MonoBehaviour
         Instance = this;
     }
 
-    /// <summary>更新某个角色的复活点。</summary>
+    /// <summary>Update a character's respawn point.</summary>
     public void SetRespawnPoint(CharacterType type, Vector3 position, Quaternion rotation)
     {
         respawnPoints[type] = new RespawnData
@@ -42,7 +42,7 @@ public class RespawnManager : MonoBehaviour
         };
     }
 
-    /// <summary>尝试取出某个角色的复活点。</summary>
+    /// <summary>Try to get a character's respawn point.</summary>
     public bool TryGetRespawnPoint(CharacterType type, out RespawnData data)
     {
         if (respawnPoints.TryGetValue(type, out data) && data.valid)

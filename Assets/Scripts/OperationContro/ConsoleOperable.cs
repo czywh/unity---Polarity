@@ -1,68 +1,68 @@
 using UnityEngine;
 
 /// <summary>
-/// PROP　操作模式下可点击的物体：点击在 A、B 两状态间切换，并【平滑过渡】。
-/// 可驱动位置、旋转，或两者同时：
-///   · 位置：positionA ↔ positionB（如 path3 的 (49,-25.78,-64) ↔ (72,-25.78,-64)）
-///   · 旋转：eulerA ↔ eulerB（如 path1 的 (0,0,0) ↔ (0,-90,0)）
-/// 点击只切换目标状态，移动/旋转由 Update 逐帧逼近（"逐渐变成"）。
+/// PROP  Object clickable in Operation Mode: clicking toggles between states A and B with a [smooth transition].
+/// Can drive position, rotation, or both:
+///   - Position: positionA <-> positionB (e.g. path3's (49,-25.78,-64) <-> (72,-25.78,-64))
+///   - Rotation: eulerA <-> eulerB (e.g. path1's (0,0,0) <-> (0,-90,0))
+/// A click only switches the target state; movement/rotation approaches it frame by frame in Update ("gradually becomes").
 ///
-/// 触发方式：操作模式面板（ConsoleTogglePanel）上的 toggle 按钮调 Operate()；
-/// 旧的"射线点中物体"方式仍保留在 OperationModeController.clickToOperate 开关下。
-/// 状态变化通过 StateChanged 事件广播，面板据此切换 on/off 图。
+/// Trigger: the toggle button on the Operation Mode panel (ConsoleTogglePanel) calls Operate();
+/// the old "raycast-click the object" method is still kept behind the OperationModeController.clickToOperate switch.
+/// State changes are broadcast via the StateChanged event, and the panel switches its on/off image accordingly.
 /// </summary>
 [DisallowMultipleComponent]
 public class ConsoleOperable : MonoBehaviour, IConsoleOperable
 {
-    [Header("位置（勾选才驱动）")]
+    [Header("Position (driven only if checked)")]
     public bool drivePosition = false;
-    public bool positionIsLocal = false;   // 世界坐标 / 局部坐标
+    public bool positionIsLocal = false;   // World space / local space
     public Vector3 positionA;
     public Vector3 positionB;
-    [Tooltip("位移速度（单位/秒）")]
+    [Tooltip("Move speed (units/sec)")]
     public float moveSpeed = 8f;
 
-    [Header("旋转（勾选才驱动）")]
+    [Header("Rotation (driven only if checked)")]
     public bool driveRotation = false;
     public bool rotationIsLocal = true;
     public Vector3 eulerA;
     public Vector3 eulerB;
-    [Tooltip("旋转速度（度/秒）")]
+    [Tooltip("Rotation speed (degrees/sec)")]
     public float rotateSpeed = 180f;
 
-    [Header("开局吸附到 A")]
+    [Header("Snap to A at Start")]
     public bool snapToAOnStart = true;
 
-    [Header("操作台按钮（贴在物体旁的 on/off 开关）")]
-    [Tooltip("按钮显示的名字；留空用物体名")]
+    [Header("Console Button (on/off toggle placed next to the object)")]
+    [Tooltip("Name shown on the button; empty = object name")]
     public string displayName;
-    [Tooltip("按钮锚点：拖一个空子物体摆到想让按钮出现的位置。\n作为子物体会随本物体一起平移/旋转，按钮就跟着走。留空则用下面的局部偏移")]
+    [Tooltip("Button anchor: an empty child placed where the button should appear.\nAs a child it moves/rotates with this object, so the button follows. Empty = use the local offset below")]
     public Transform buttonAnchor;
-    [Tooltip("没有锚点时用这个：相对本物体的局部偏移。\n用 TransformPoint 换算，所以物体旋转/移动时锚点跟着转")]
+    [Tooltip("Used when there is no anchor: local offset relative to this object.\nConverted with TransformPoint, so the anchor follows when the object rotates/moves")]
     public Vector3 buttonLocalOffset = new Vector3(0f, 2f, 0f);
 
-    [Header("调试（运行时只读）")]
-    [SerializeField] private int state;   // 0 = A，1 = B
+    [Header("Debug (read-only at runtime)")]
+    [SerializeField] private int state;   // 0 = A, 1 = B
 
-    /// <summary>当前目标状态：0 = A，1 = B</summary>
+    /// <summary>Current target state: 0 = A, 1 = B</summary>
     public int State => state;
-    /// <summary>是否处于 B 状态（面板上显示为 ON）</summary>
+    /// <summary>Whether in state B (shown as ON on the panel)</summary>
     public bool IsAtB => state == 1;
-    /// <summary>面板显示名</summary>
+    /// <summary>Panel display name</summary>
     public string DisplayName => string.IsNullOrEmpty(displayName) ? name : displayName;
 
-    /// <summary>按钮锚点的【实时】世界坐标（随物体当前位置/朝向变化）。仅 followTarget 时用</summary>
+    /// <summary>[Live] world position of the button anchor (changes with the object's current position/rotation). Only used with followTarget</summary>
     public Vector3 ButtonAnchorWorld =>
         buttonAnchor != null ? buttonAnchor.position : transform.TransformPoint(buttonLocalOffset);
 
     /// <summary>
-    /// 按钮锚点的【固定】世界坐标：Start() 里物体吸附到 A 状态之后算一次，之后再也不变。
-    /// 无论物体之后移到 B 还是转到哪，按钮都钉在这个位置 —— 这是默认使用的锚点。
+    /// [Fixed] world position of the button anchor: computed once in Start() after the object snaps to state A, and never changes afterwards.
+    /// Wherever the object later moves to B or rotates, the button stays pinned here -- this is the anchor used by default.
     /// </summary>
     public Vector3 ButtonAnchorFixed { get; private set; }
     private bool anchorCached;
 
-    /// <summary>目标状态改变时触发（参数是自己）。按钮订阅它来刷新 on/off 图</summary>
+    /// <summary>Raised when the target state changes (argument is this). Buttons subscribe to refresh their on/off image</summary>
     public event System.Action<ConsoleOperable> StateChanged;
 
     private void Start()
@@ -72,24 +72,24 @@ public class ConsoleOperable : MonoBehaviour, IConsoleOperable
         CacheFixedAnchor();
     }
 
-    /// 记录按钮的固定落点。默认在 Start（已吸附到 A）时调用；改了锚点想重算可手动再调
+    /// Records the button's fixed position. Called by default in Start (after snapping to A); call again manually to recompute after changing the anchor
     public void CacheFixedAnchor()
     {
         ButtonAnchorFixed = ButtonAnchorWorld;
         anchorCached = true;
     }
 
-    /// 面板取锚点用：还没跑过 Start（比如刚 Instantiate）就临时用实时值兜底
+    /// Used by the panel to get the anchor: if Start has not run yet (e.g. just Instantiated), fall back to the live value
     public Vector3 GetButtonAnchor(bool follow) =>
         follow || !anchorCached ? ButtonAnchorWorld : ButtonAnchorFixed;
 
-    // 被触发：切换到另一状态（Update 会平滑过渡过去）
+    // Triggered: switch to the other state (Update transitions smoothly)
     public void Operate()
     {
         SetState(1 - state);
     }
 
-    /// <summary>直接指定目标状态（0 = A，1 = B）。相同则不触发事件</summary>
+    /// <summary>Set the target state directly (0 = A, 1 = B). No event if unchanged</summary>
     public void SetState(int s)
     {
         s = Mathf.Clamp(s, 0, 1);
@@ -137,7 +137,7 @@ public class ConsoleOperable : MonoBehaviour, IConsoleOperable
             }
         }
 
-        // 移动/旋转中通知网格进入高频扫描
+        // While moving/rotating, tell the grid to enter high-frequency scanning
         if (moved && GridSystem.Instance != null) GridSystem.Instance.NotifyMoving();
     }
 

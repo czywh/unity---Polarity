@@ -1,34 +1,34 @@
 using UnityEngine;
 
 /// <summary>
-/// PROP　操作台（带调试日志版）：玩家靠近并聚焦后按 activateKey（默认 F）进入「操作模式」。
-/// 继承 InteractableBase（默认 PlayerOnly）。每个操作台自带相机机位参数。
+/// PROP  Console (with debug logging): when the player is near and focused, press activateKey (default F) to enter "Operation Mode".
+/// Inherits InteractableBase (default PlayerOnly). Each console carries its own camera position params.
 ///
-/// 调试：勾 verboseLog 后，聚焦变化 / 按 F 会打印，方便确认"为什么按 F 没进操作模式"。
+/// Debug: with verboseLog checked, focus changes / F presses are logged, to help figure out "why pressing F didn't enter Operation Mode".
 /// </summary>
 public class ConsoleStation : InteractableBase
 {
-    [Header("操作台激活")]
-    [Tooltip("靠近并聚焦后，按此键进入操作模式")]
+    [Header("Console Activation")]
+    [Tooltip("Press this key when near and focused to enter Operation Mode")]
     public KeyCode activateKey = KeyCode.F;
 
-    [Header("操作模式机位")]
-    [Tooltip("机位锚点：拖一个空物体摆到想要的相机位置/角度；留空则用下面的坐标")]
+    [Header("Operation Mode Camera Position")]
+    [Tooltip("Camera anchor: drag in an empty object placed at the desired camera position/angle; empty = use the coordinates below")]
     public Transform cameraAnchor;
     public Vector3 cameraPosition = new Vector3(-107.53f, 75.81f, -93.7f);
     public Vector3 cameraEuler = new Vector3(55.952f, 90f, -0.2f);
     public float orthographicSize = 33f;
 
-    [Header("本操作台可控制的物体")]
-    [Tooltip("进入操作模式后面板上列出的 ConsoleOperable。\n留空 = 场景里所有 ConsoleOperable（按名字排序）")]
+    [Header("Objects Controllable by This Console")]
+    [Tooltip("ConsoleOperables listed on the panel after entering Operation Mode.\nEmpty = all ConsoleOperables in the scene (sorted by name)")]
     public ConsoleOperable[] operables;
 
-    [Header("引用（留空自动查找）")]
+    [Header("References (empty = auto-find)")]
     [SerializeField] private OperationModeController operationMode;
 
-    [Header("调试")]
+    [Header("Debug")]
     public bool verboseLog = true;
-    [Header("调试（运行时只读）")]
+    [Header("Debug (runtime read-only)")]
     [SerializeField] private bool focusedReadout;
 
     private void Reset()
@@ -42,42 +42,42 @@ public class ConsoleStation : InteractableBase
         base.OnEnable();
         if (operationMode == null) operationMode = FindFirstObjectByType<OperationModeController>();
         if (operationMode == null)
-            Debug.LogWarning("[操作台] 场景里没找到 OperationModeController！按 F 也没法进操作模式。", this);
+            Debug.LogWarning("[Console] No OperationModeController found in scene! Pressing F can't enter Operation Mode.", this);
     }
 
     private void Update()
     {
-        // 聚焦状态变化时打印一次
+        // Log once when focus state changes
         if (IsFocused != focusedReadout)
         {
             focusedReadout = IsFocused;
             if (verboseLog)
-                Debug.Log($"[操作台] {name} 聚焦 = {IsFocused}" +
-                          (IsFocused && CurrentInteractor != null ? $"，交互者={CurrentInteractor.name}({CurrentInteractor.type})" : ""), this);
+                Debug.Log($"[Console] {name} focused = {IsFocused}" +
+                          (IsFocused && CurrentInteractor != null ? $", interactor={CurrentInteractor.name}({CurrentInteractor.type})" : ""), this);
         }
 
         if (!IsFocused) return;
 
         if (CurrentInteractor == null)
         {
-            if (verboseLog) Debug.Log("[操作台] 已聚焦但 CurrentInteractor 为空", this);
+            if (verboseLog) Debug.Log("[Console] Focused but CurrentInteractor is null", this);
             return;
         }
         if (CurrentInteractor.type != InteractorType.Player)
         {
-            if (verboseLog) Debug.Log($"[操作台] 聚焦者不是玩家（是 {CurrentInteractor.type}），不响应 F", this);
+            if (verboseLog) Debug.Log($"[Console] Focuser is not the player (it is {CurrentInteractor.type}); ignoring F", this);
             return;
         }
 
         if (Input.GetKeyDown(activateKey))
         {
-            if (verboseLog) Debug.Log($"[操作台] 按下 {activateKey} → 请求进入操作模式", this);
+            if (verboseLog) Debug.Log($"[Console] Pressed {activateKey} → requesting to enter Operation Mode", this);
             if (operationMode != null) operationMode.Enter(this);
-            else Debug.LogWarning("[操作台] operationMode 为空，无法进入", this);
+            else Debug.LogWarning("[Console] operationMode is null; cannot enter", this);
         }
     }
 
-    /// 本操作台控制的物体列表（已剔除空槽；未配置则退回全场扫描）
+    /// Objects controlled by this console (empty slots removed; falls back to a full scene scan if not configured)
     public ConsoleOperable[] GetOperables()
     {
         if (operables != null && operables.Length > 0)
@@ -91,7 +91,7 @@ public class ConsoleStation : InteractableBase
         return all;
     }
 
-    /// 提供本操作台的相机机位（有锚点用锚点，否则用坐标字段）
+    /// Provides this console's camera position (uses the anchor if set, otherwise the coordinate fields)
     public void GetCameraPose(out Vector3 pos, out Quaternion rot, out float size)
     {
         if (cameraAnchor != null)

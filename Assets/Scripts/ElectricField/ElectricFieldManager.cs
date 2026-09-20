@@ -2,10 +2,10 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// CORE-03　电子领域中枢。登记所有活跃领域（即时领域 + 以后的导弹领域），
-/// 对外提供统一查询：某个点是否落在任意领域内。
+/// CORE-03  Electric field hub. Registers all active fields (instant fields + future missile fields),
+/// and provides a unified query: whether a point lies inside any field.
 ///
-/// 单例 + 懒加载：场景里没有也会自动创建一个，零配置即可用。
+/// Singleton + lazy init: auto-created even if the scene has none, works with zero config.
 /// </summary>
 public class ElectricFieldManager : MonoBehaviour
 {
@@ -49,7 +49,7 @@ public class ElectricFieldManager : MonoBehaviour
         fields.Remove(field);
     }
 
-    /// 该点是否落在任意活跃领域内
+    /// Whether the point lies inside any active field
     public bool IsInsideAnyField(Vector3 point)
     {
         for (int i = 0; i < fields.Count; i++)
@@ -58,7 +58,7 @@ public class ElectricFieldManager : MonoBehaviour
         return false;
     }
 
-    /// 该包围盒是否与任意领域球相交（大物体被局部覆盖也算）——充电 / UI 统一用它
+    /// Whether this bounding box intersects any field sphere (partial coverage of large objects counts) -- used by both charging and UI
     public bool IsBoundsInAnyField(Bounds bounds)
     {
         for (int i = 0; i < fields.Count; i++)
@@ -71,8 +71,11 @@ public class ElectricFieldManager : MonoBehaviour
         return false;
     }
 
-    /// 该碰撞体是否与任意领域球精确相交（球心到碰撞体最近点的距离 ≤ 半径）
-    public bool IsColliderInAnyField(Collider col)
+    /// Whether this collider precisely intersects any field sphere (distance from sphere center to the collider's closest point <= radius)
+    public bool IsColliderInAnyField(Collider col) => IsColliderInAnyField(col, 0f);
+
+    /// Same, with an extra reach: the collider counts as inside when it comes within `margin` of the field sphere (used by powered portals)
+    public bool IsColliderInAnyField(Collider col, float margin)
     {
         if (col == null) return false;
         for (int i = 0; i < fields.Count; i++)
@@ -80,14 +83,15 @@ public class ElectricFieldManager : MonoBehaviour
             var f = fields[i];
             if (f == null) continue;
             Vector3 c = f.transform.position;
-            Vector3 closest = col.ClosestPoint(c);            // 碰撞体上离球心最近的点
-            if ((closest - c).sqrMagnitude <= f.radius * f.radius)
+            Vector3 closest = col.ClosestPoint(c);            // Point on the collider closest to the sphere center
+            float r = f.radius + margin;
+            if ((closest - c).sqrMagnitude <= r * r)
                 return true;
         }
         return false;
     }
 
-    /// 该点是否落在任意"影响玩家重力"的领域内（导弹领域）——供玩家幽灵态判定
+    /// Whether the point lies inside any field that "affects player gravity" (missile fields) -- used for the player's phantom state check
     public bool IsInsidePhantomField(Vector3 point)
     {
         for (int i = 0; i < fields.Count; i++)
@@ -95,4 +99,4 @@ public class ElectricFieldManager : MonoBehaviour
                 return true;
         return false;
     }
-}
+}

@@ -2,61 +2,61 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 
 /// <summary>
-/// CORE　操作模式管理器（带调试日志版）。ConsoleStation 按 F 时调 Enter()：
-///   · 保存 F 按下时的相机状态（位置 / 角度 / 投影 / 尺寸），用于 ESC 还原；
-///   · 禁用 OrbitFollowCamera（相机脱离鼠标控制、保持不动）；
-///   · 禁用 CharacterSwitcher（Q 切换失效）+ 锁住玩家 / 机器人所有控制脚本；
-///   · 相机移到操作台机位，投影切 Orthographic + 指定 size。
-///   · 显示 ConsoleTogglePanel：屏幕右侧一列 toggle 按钮，每个对应一个 ConsoleOperable，点击即触发。
-/// 按 ESC 调 Exit()：隐藏面板、还原相机（切回 Perspective + 原机位）、解冻控制、交回 Q 切换。
+/// CORE  Operation Mode manager (with debug logging). ConsoleStation calls Enter() when F is pressed:
+///   - Saves the camera state at the moment F was pressed (position / rotation / projection / size) so ESC can restore it;
+///   - Disables OrbitFollowCamera (camera detaches from mouse control and stays put);
+///   - Disables CharacterSwitcher (Q switching stops working) + locks all player / robot control scripts;
+///   - Moves the camera to the console viewpoint, switches projection to Orthographic + the given size.
+///   - Shows ConsoleTogglePanel: a column of toggle buttons on the right side of the screen, one per ConsoleOperable; clicking triggers it.
+/// ESC calls Exit(): hides the panel, restores the camera (back to Perspective + original viewpoint), unfreezes controls, hands Q switching back.
 ///
-/// 触发可操作物的两种方式：
-///   · 面板按钮（默认，推荐）—— 由 ConsoleTogglePanel 负责；
-///   · 射线点中物体（旧方案）—— 勾 clickToOperate 才启用，且鼠标悬停在 UI 上时不会误触发。
+/// Two ways to trigger operables:
+///   - Panel buttons (default, recommended) -- handled by ConsoleTogglePanel;
+///   - Raycast-clicking objects (legacy) -- only enabled when clickToOperate is checked, and never fires while the mouse is over UI.
 ///
-/// 调试：勾 verboseLog 后，进入/退出/点击各步骤都会在 Console 打印，方便定位"点击无效"等问题。
+/// Debug: with verboseLog checked, every enter/exit/click step is printed to the Console, handy for tracking down "click does nothing" issues.
 /// </summary>
 public class OperationModeController : MonoBehaviour
 {
-    [Header("引用（留空自动查找）")]
+    [Header("References (auto-found if left empty)")]
     [SerializeField] private Camera cam;
     [SerializeField] private OrbitFollowCamera orbitCamera;
     [SerializeField] private CharacterSwitcher switcher;
-    [Tooltip("操作模式下启用的机器人固定轴向移动组件（留空自动查找）")]
+    [Tooltip("Robot fixed-axis movement component enabled in Operation Mode (auto-found if left empty)")]
     [SerializeField] private RobotConsoleMover robotConsoleMover;
-    [Tooltip("操作模式下显示的 toggle 面板（留空自动查找；场景里没有就运行时自动创建一个默认的）")]
+    [Tooltip("Toggle panel shown in Operation Mode (auto-found if empty; if the scene has none, a default one is created at runtime)")]
     [SerializeField] private ConsoleTogglePanel togglePanel;
 
-    [Header("输入")]
+    [Header("Input")]
     public KeyCode exitKey = KeyCode.Escape;
 
-    [Header("光标")]
-    [Tooltip("操作模式下是否显示鼠标光标（点击物体需要开启）")]
+    [Header("Cursor")]
+    [Tooltip("Whether to show the mouse cursor in Operation Mode (required for clicking objects)")]
     public bool showCursorInMode = true;
 
-    [Header("操作模式点击（旧方案：射线点中物体）")]
-    [Tooltip("是否允许用鼠标射线直接点场景里的可操作物。默认关闭，改用面板按钮")]
+    [Header("Operation Mode Click (legacy: raycast objects)")]
+    [Tooltip("Allow clicking operables in the scene directly with a mouse raycast. Off by default; use the panel buttons instead")]
     public bool clickToOperate = false;
-    [Tooltip("可点击物体所在层；建议只勾可操作物的层")]
+    [Tooltip("Layers of clickable objects; ideally only check the operables' layers")]
     public LayerMask clickMask = ~0;
-    [Tooltip("点击射线最大距离")]
+    [Tooltip("Max click ray distance")]
     public float clickMaxDistance = 5000f;
-    [Tooltip("在 Scene 视图画出点击射线，持续这么多秒（红=没中，绿=命中）")]
+    [Tooltip("Draw the click ray in the Scene view for this many seconds (red = miss, green = hit)")]
     public float debugRayDuration = 5f;
-    [Tooltip("画射线的长度（仅可视化用，不影响实际检测距离）")]
+    [Tooltip("Length of the drawn ray (visualization only, does not affect the actual detection distance)")]
     public float debugRayDrawLength = 300f;
 
-    [Header("调试")]
-    [Tooltip("打开后在 Console 打印进入/退出/点击的详细日志")]
+    [Header("Debug")]
+    [Tooltip("When on, prints detailed enter/exit/click logs to the Console")]
     public bool verboseLog = true;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (runtime read-only)")]
     [SerializeField] private bool inOperationMode;
 
     public bool InOperationMode => inOperationMode;
     public ConsoleStation CurrentConsole { get; private set; }
 
-    // 保存的相机 / 光标状态（F 按下时）
+    // Saved camera / cursor state (when F was pressed)
     private Vector3 savedPos;
     private Quaternion savedRot;
     private bool savedOrtho;
@@ -74,12 +74,12 @@ public class OperationModeController : MonoBehaviour
         if (togglePanel == null) togglePanel = FindFirstObjectByType<ConsoleTogglePanel>(FindObjectsInactive.Include);
         if (togglePanel == null) togglePanel = ConsoleTogglePanel.CreateDefault();
 
-        // 启动自检：把关键引用是否就位打印出来
-        Log($"Awake 自检 → cam={(cam ? cam.name : "null")}, " +
+        // Startup self-check: print whether key references are in place
+        Log($"Awake self-check -> cam={(cam ? cam.name : "null")}, " +
             $"orbitCamera={(orbitCamera ? "OK" : "null")}, " +
             $"switcher={(switcher ? "OK" : "null")}");
         if (cam == null)
-            Debug.LogWarning("[操作模式] Camera.main 为空！确认 Main Camera 的 Tag = MainCamera，或手动把相机拖到 Cam 槽。", this);
+            Debug.LogWarning("[OperationMode] Camera.main is null! Make sure Main Camera's Tag = MainCamera, or drag the camera into the Cam slot manually.", this);
     }
 
     private void Update()
@@ -88,7 +88,7 @@ public class OperationModeController : MonoBehaviour
 
         if (Input.GetKeyDown(exitKey)) { Exit(); return; }
 
-        // 旧方案：射线点物体。鼠标压在 UI 上时跳过，避免点面板按钮时同时打中场景物体
+        // Legacy: raycast objects. Skip when the mouse is over UI, so clicking a panel button doesn't also hit a scene object
         if (clickToOperate && Input.GetMouseButtonDown(0) && !IsPointerOverUI())
             TryClickOperable();
     }
@@ -96,23 +96,23 @@ public class OperationModeController : MonoBehaviour
     private static bool IsPointerOverUI()
         => EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
 
-    // 从鼠标位置发射线，命中的可操作物调 Operate()
+    // Cast a ray from the mouse position; call Operate() on the operable it hits
     private void TryClickOperable()
     {
         if (cam == null)
         {
-            Debug.LogWarning("[操作模式] 点击失败：cam 为空（Camera.main 没找到）", this);
+            Debug.LogWarning("[OperationMode] Click failed: cam is null (Camera.main not found)", this);
             return;
         }
 
         Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-        Log($"点击射线：origin={ray.origin}, dir={ray.direction}, mouse={Input.mousePosition}");
+        Log($"Click ray: origin={ray.origin}, dir={ray.direction}, mouse={Input.mousePosition}");
 
         bool hitSomething = Physics.Raycast(ray, out RaycastHit hit, clickMaxDistance, clickMask, QueryTriggerInteraction.Ignore);
 
-        // —— 可视化射线（Scene 视图可见）——
-        //   命中 → 绿线画到命中点，命中点再画个小十字
-        //   没中 → 红线沿方向画一段
+        // -- Visualize the ray (visible in Scene view) --
+        //   Hit -> green line to the hit point, plus a small cross at the hit point
+        //   Miss -> red line along the direction
         if (hitSomething)
         {
             Debug.DrawLine(ray.origin, hit.point, Color.green, debugRayDuration);
@@ -128,21 +128,21 @@ public class OperationModeController : MonoBehaviour
             var op = hit.collider.GetComponentInParent<IConsoleOperable>();
             if (op != null)
             {
-                Log($"点中 <color=lime>{hit.collider.name}</color> @ {hit.point} → 找到 IConsoleOperable，调用 Operate()");
+                Log($"Hit <color=lime>{hit.collider.name}</color> @ {hit.point} -> found IConsoleOperable, calling Operate()");
                 op.Operate();
             }
             else
             {
-                Debug.Log($"[操作模式] 点中 {hit.collider.name} @ {hit.point}，但它（及父级）没有 IConsoleOperable 组件", hit.collider);
+                Debug.Log($"[OperationMode] Hit {hit.collider.name} @ {hit.point}, but it (and its parents) has no IConsoleOperable component", hit.collider);
             }
         }
         else
         {
-            Debug.Log("[操作模式] 射线没打中任何东西 —— 看 Scene 视图里的红线朝向：若没穿过目标物体，就是机位/准星没对准；若穿过了却没中，就是该物体没碰撞体或层不在 Click Mask");
+            Debug.Log("[OperationMode] Ray hit nothing -- check the red line's direction in the Scene view: if it doesn't pass through the target, the viewpoint/crosshair is misaligned; if it passes through but misses, the object has no collider or its layer isn't in Click Mask");
         }
     }
 
-    // 在命中点画一个三轴小十字，便于在 Scene 里看清位置
+    // Draw a small 3-axis cross at the hit point to make it easy to see in the Scene
     private static void DrawHitCross(Vector3 p, float size, Color c, float dur)
     {
         Debug.DrawLine(p - Vector3.right * size, p + Vector3.right * size, c, dur);
@@ -152,15 +152,15 @@ public class OperationModeController : MonoBehaviour
 
     public void Enter(ConsoleStation console)
     {
-        if (inOperationMode) { Log("Enter 被忽略：已在操作模式中"); return; }
-        if (console == null) { Debug.LogWarning("[操作模式] Enter 失败：console 为空", this); return; }
-        if (cam == null) { Debug.LogWarning("[操作模式] Enter 失败：cam 为空（Camera.main 没找到）", this); return; }
+        if (inOperationMode) { Log("Enter ignored: already in Operation Mode"); return; }
+        if (console == null) { Debug.LogWarning("[OperationMode] Enter failed: console is null", this); return; }
+        if (cam == null) { Debug.LogWarning("[OperationMode] Enter failed: cam is null (Camera.main not found)", this); return; }
 
         inOperationMode = true;
         CurrentConsole = console;
-        Log($"<color=cyan>进入操作模式</color>，操作台 = {console.name}");
+        Log($"<color=cyan>Entering Operation Mode</color>, console = {console.name}");
 
-        // 保存 F 按下时的相机状态（供 ESC 还原）
+        // Save the camera state at the moment F was pressed (for ESC restore)
         savedPos = cam.transform.position;
         savedRot = cam.transform.rotation;
         savedOrtho = cam.orthographic;
@@ -169,68 +169,68 @@ public class OperationModeController : MonoBehaviour
         savedCursorLock = Cursor.lockState;
         savedCursorVisible = Cursor.visible;
 
-        // 冻结：相机脱离鼠标控制、禁用 Q 切换、锁住玩家/机器人移动
+        // Freeze: detach camera from mouse control, disable Q switching, lock player/robot movement
         if (orbitCamera != null) orbitCamera.enabled = false;
-        else Log("提示：orbitCamera 为空，相机不会被禁用（鼠标可能仍能转视角）");
+        else Log("Note: orbitCamera is null, the camera won't be disabled (mouse may still rotate the view)");
 
         if (switcher != null)
         {
-            switcher.SetExternallyFrozen(true);   // 外部冻结：期间即使角色死亡，控制也不会被误开
-            switcher.enabled = false;             // 停掉 Q 检测
+            switcher.SetExternallyFrozen(true);   // External freeze: controls won't be re-enabled by mistake even if a character dies meanwhile
+            switcher.enabled = false;             // Stop Q detection
         }
-        else Log("提示：switcher 为空，Q 切换 / 角色冻结不会生效");
+        else Log("Note: switcher is null, Q switching / character freeze won't take effect");
 
-        // 操作模式：启用机器人固定轴向移动（WASD 直接控世界轴）
+        // Operation Mode: enable robot fixed-axis movement (WASD drives world axes directly)
         if (robotConsoleMover != null) robotConsoleMover.enabled = true;
 
-        // 相机切到操作台机位 + 正交
+        // Move camera to the console viewpoint + orthographic
         console.GetCameraPose(out Vector3 pos, out Quaternion rot, out float size);
         cam.transform.SetPositionAndRotation(pos, rot);
         cam.orthographic = true;
         cam.orthographicSize = size;
-        Log($"相机切到机位 pos={pos}, euler={rot.eulerAngles}, orthoSize={size}");
+        Log($"Camera moved to viewpoint pos={pos}, euler={rot.eulerAngles}, orthoSize={size}");
 
         if (showCursorInMode)
         {
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
-        Log($"光标：lockState={Cursor.lockState}, visible={Cursor.visible}（showCursorInMode={showCursorInMode}）");
+        Log($"Cursor: lockState={Cursor.lockState}, visible={Cursor.visible} (showCursorInMode={showCursorInMode})");
 
-        // 显示 toggle 面板
+        // Show the toggle panel
         if (togglePanel != null) togglePanel.Show(console, cam);
-        else Log("提示：togglePanel 为空，不会显示操作面板");
+        else Log("Note: togglePanel is null, the operation panel won't be shown");
     }
 
     public void Exit()
     {
-        if (!inOperationMode) { Log("Exit 被忽略：当前不在操作模式"); return; }
-        if (cam == null) { Debug.LogWarning("[操作模式] Exit 失败：cam 为空", this); return; }
+        if (!inOperationMode) { Log("Exit ignored: not currently in Operation Mode"); return; }
+        if (cam == null) { Debug.LogWarning("[OperationMode] Exit failed: cam is null", this); return; }
 
-        Log("<color=cyan>退出操作模式</color>");
+        Log("<color=cyan>Exiting Operation Mode</color>");
 
-        // 先收面板
+        // Hide the panel first
         if (togglePanel != null) togglePanel.Hide();
 
-        // 还原相机（透视 + FOV + F 时的机位）
+        // Restore camera (perspective + FOV + viewpoint from when F was pressed)
         cam.orthographic = savedOrtho;
         cam.orthographicSize = savedOrthoSize;
         cam.fieldOfView = savedFov;
         cam.transform.SetPositionAndRotation(savedPos, savedRot);
 
-        // 还原光标
+        // Restore cursor
         Cursor.lockState = savedCursorLock;
         Cursor.visible = savedCursorVisible;
 
-        // 关掉操作模式的固定轴向移动
+        // Turn off Operation Mode's fixed-axis movement
         if (robotConsoleMover != null) robotConsoleMover.enabled = false;
 
-        // 解冻
+        // Unfreeze
         if (orbitCamera != null) orbitCamera.enabled = true;
         if (switcher != null)
         {
             switcher.enabled = true;
-            switcher.SetExternallyFrozen(false);   // 解除外部冻结（内部会 RefreshControlState 交回控制）
+            switcher.SetExternallyFrozen(false);   // Release external freeze (internally calls RefreshControlState to hand control back)
         }
 
         inOperationMode = false;
@@ -245,6 +245,6 @@ public class OperationModeController : MonoBehaviour
 
     private void Log(string msg)
     {
-        if (verboseLog) Debug.Log($"[操作模式] {msg}", this);
+        if (verboseLog) Debug.Log($"[OperationMode] {msg}", this);
     }
 }

@@ -2,41 +2,41 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 可交互物基类：实现 IInteractable，提供访问控制 + 焦点状态 + 全局登记。
-/// 充电桩、开关、拉杆等继承本类即可。
+/// Interactable base class: implements IInteractable, provides access control + focus state + global registry.
+/// Charging docks, switches, levers, etc. just inherit from this class.
 ///
-/// 关键状态 IsFocused：被一个"有权限的交互者"聚焦时为 true——
-/// 充电桩等持续式交互只需在 Update 里判断 IsFocused 即可工作。
+/// Key state IsFocused: true while focused by an "authorized interactor" --
+/// continuous interactions like charging docks only need to check IsFocused in Update to work.
 ///
-/// 交互提示：InteractVerb（动作词）+ UsesKeyPress（是否按键式）供 InteractionPrompt 组文本。
+/// Interaction prompt: InteractVerb (action word) + UsesKeyPress (whether key-press based) let InteractionPrompt build the text.
 /// </summary>
 [DisallowMultipleComponent]
 public abstract class InteractableBase : MonoBehaviour, IInteractable
 {
-    [Header("交互访问")]
-    [Tooltip("谁能交互：仅玩家 / 仅机器人 / 都可以")]
+    [Header("Interaction Access")]
+    [Tooltip("Who can interact: player only / robot only / both")]
     public InteractAccess access = InteractAccess.Both;
-    [Tooltip("是否开放交互；关掉则任何人都用不了（如未激活 / 已损坏）")]
+    [Tooltip("Whether interaction is open; off = nobody can use it (e.g. not activated / broken)")]
     public bool interactable = true;
 
-    [Header("交互提示")]
-    [Tooltip("提示里的动作词，如 Charge / Open / Pull")]
+    [Header("Interaction Prompt")]
+    [Tooltip("Action word in the prompt, e.g. Charge / Open / Pull")]
     [SerializeField] protected string interactVerb = "Interact";
 
-    [Header("交互提示位置")]
-    [Tooltip("显式锚点：拖一个空子物体进来，提示就固定跟它（最自由）。留空则用下面的比例在包围盒上定位")]
+    [Header("Interaction Prompt Position")]
+    [Tooltip("Explicit anchor: drag in an empty child and the prompt sticks to it (most flexible). Empty = position on the bounding box using the ratio below")]
     [SerializeField] private Transform promptAnchor;
     [Range(0f, 1f)]
-    [Tooltip("无显式锚点时，提示在包围盒高度上的位置：0=底部, 0.5=中心, 1=顶部；中下方约 0.3")]
+    [Tooltip("Without an explicit anchor, the prompt's position along the bounding box height: 0=bottom, 0.5=center, 1=top; lower-middle is about 0.3")]
     [SerializeField] private float promptVertical = 1f;
-    [Tooltip("最终位置再叠加的世界偏移（微调用）")]
+    [Tooltip("Extra world offset added to the final position (for fine-tuning)")]
     [SerializeField] private Vector3 promptWorldOffset = Vector3.zero;
 
-    [Header("调试（运行时只读，便于检查交互是否触发）")]
-    [Tooltip("当前是否被有权限的交互者聚焦 = 你说的 interable 为 true")]
+    [Header("Debug (runtime read-only, handy for checking whether interaction triggers)")]
+    [Tooltip("Whether currently focused by an authorized interactor = interactable is true")]
     [SerializeField] private bool isFocusedReadout;
 
-    // —— 全局登记，供 Interactor 遍历（与 ElectricField 同一套思路）——
+    // -- Global registry for Interactor to iterate (same approach as ElectricField) --
     private static readonly List<InteractableBase> all = new List<InteractableBase>();
     public static IReadOnlyList<InteractableBase> All => all;
 
@@ -46,21 +46,21 @@ public abstract class InteractableBase : MonoBehaviour, IInteractable
     public bool IsInteractable => interactable && isActiveAndEnabled;
     public Transform InteractTransform => transform;
 
-    // —— 交互提示对外接口 ——
-    /// 提示里的动作词（Charge / Open …）
+    // -- Interaction prompt public API --
+    /// Action word in the prompt (Charge / Open ...)
     public string InteractVerb => interactVerb;
-    /// 是否按键式交互：true → 提示显示 "Press [键] to 动作词"；false → 只显示动作词（持续/自动）
+    /// Whether key-press interaction: true → prompt shows "Press [key] to <verb>"; false → shows only the verb (continuous/automatic)
     public virtual bool UsesKeyPress => true;
 
-    // —— 交互提示位置 ——
-    /// 显式锚点（可空）；非空时提示固定跟它
+    // -- Interaction prompt position --
+    /// Explicit anchor (nullable); when set, the prompt sticks to it
     public Transform PromptAnchor => promptAnchor;
-    /// 包围盒高度上的定位比例：0=底部, 0.5=中心, 1=顶部
+    /// Positioning ratio along bounding box height: 0=bottom, 0.5=center, 1=top
     public float PromptVertical => promptVertical;
-    /// 叠加的世界偏移
+    /// Extra world offset
     public Vector3 PromptWorldOffset => promptWorldOffset;
 
-    // —— 焦点状态 ——
+    // -- Focus state --
     public bool IsFocused { get; private set; }
     public Interactor CurrentInteractor { get; private set; }
 
@@ -75,7 +75,7 @@ public abstract class InteractableBase : MonoBehaviour, IInteractable
         if (IsFocused) ClearFocus();
     }
 
-    // 把 IsFocused 镜像到可见字段，方便在 Inspector 里实时观察交互是否触发
+    // Mirror IsFocused into a visible field for watching in the Inspector whether interaction triggers
     protected virtual void LateUpdate()
     {
         isFocusedReadout = IsFocused;

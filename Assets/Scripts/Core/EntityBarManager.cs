@@ -2,34 +2,34 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// UI-03 电量条池管理器：统一管理电子实体 + 敌人的电量条（同一套 EntityEnergyBar prefab 池化）。
+/// UI-03 Energy bar pool manager: manages energy bars for electric entities + enemies together (pooled from the same EntityEnergyBar prefab).
 ///
-/// 显示规则（按来源类型）：
-///   · 电子实体(ElectricEntity)：瞄准注视 / 准星命中 / 在领域内 → 显示（原逻辑）。
-///   · 敌人(EnemyBarSource)：操作模式下常驻显示（不需靠近）。
+/// Display rules (by source type):
+///   - Electric entity (ElectricEntity): aimed/gazed at / hit by crosshair / inside an electric field -> shown (original logic).
+///   - Enemy (EnemyBarSource): always shown in Operation Mode (no need to get close).
 /// </summary>
 [DisallowMultipleComponent]
 public class EntityBarManager : MonoBehaviour
 {
-    [Header("血条池")]
+    [Header("Bar Pool")]
     [SerializeField] private EntityEnergyBar barPrefab;
     [SerializeField] private int maxBars = 12;
 
-    [Header("瞄准来源（留空自动查找）")]
+    [Header("Aim Sources (auto-found if left empty)")]
     [SerializeField] private PlayerAimController playerAim;
     [SerializeField] private RobotAimController robotAim;
     [SerializeField] private OperationModeController operationMode;
 
-    [Header("瞄准模式下的注视检测")]
+    [Header("Gaze Detection in Aim Mode")]
     [SerializeField] private Camera cam;
     [SerializeField] private float viewDistance = 30f;
     [SerializeField] private float viewAngle = 8f;
     [SerializeField] private LayerMask occluders;
 
-    [Header("其它")]
+    [Header("Other")]
     [SerializeField] private float lingerTime = 0.4f;
     [SerializeField] private float rescanInterval = 1f;
-    [Tooltip("敌人条显示距离（米）：相机在此范围内的敌人一直显示条")]
+    [Tooltip("Enemy bar display distance (meters): enemies within this range of the camera always show their bar")]
     [SerializeField] private float enemyShowDistance = 10f;
 
     private readonly List<EntityEnergyBar> bars = new List<EntityEnergyBar>();
@@ -77,7 +77,7 @@ public class EntityBarManager : MonoBehaviour
             if (s is ElectricEntityBarSource es)
                 want = WantEntity(es, anyAiming, playerAiming);
             else if (s is EnemyBarSource enemy)
-                want = inOpMode || WantEnemy(enemy);   // 操作模式常驻；否则 10m 内一直显示
+                want = inOpMode || WantEnemy(enemy);   // Always on in Operation Mode; otherwise always shown within 10m
             else
                 want = false;
 
@@ -100,14 +100,14 @@ public class EntityBarManager : MonoBehaviour
         }
     }
 
-    // 电子实体显示规则：领域内 或 瞄准注视 / 准星命中
+    // Electric entity display rule: inside a field, or aimed/gazed at / hit by crosshair
     private bool WantEntity(ElectricEntityBarSource es, bool anyAiming, bool playerAiming)
     {
-        if (es.Entity.IsCovered()) return true;   // 在领域内
+        if (es.Entity.IsCovered()) return true;   // Inside a field
 
         if (anyAiming)
         {
-            if (playerAiming && playerAim.AimedEntity == es.Entity) return true;  // 玩家准星命中
+            if (playerAiming && playerAim.AimedEntity == es.Entity) return true;  // Hit by the player's crosshair
             if (cam != null)
             {
                 Vector3 to = es.BarWorldPosition - cam.transform.position;
@@ -119,7 +119,7 @@ public class EntityBarManager : MonoBehaviour
         return false;
     }
 
-    // 敌人显示规则：相机 enemyShowDistance 米内一直显示（待命也显示）
+    // Enemy display rule: always shown within enemyShowDistance meters of the camera (idle ones too)
     private bool WantEnemy(EnemyBarSource enemy)
     {
         if (cam == null) return false;
@@ -146,7 +146,7 @@ public class EntityBarManager : MonoBehaviour
         return null;
     }
 
-    // 重扫：合并 ElectricEntity（包装）+ EnemyBarSource
+    // Rescan: merge ElectricEntity (wrapped) + EnemyBarSource
     private void Rescan()
     {
         sources.Clear();
@@ -167,7 +167,7 @@ public class EntityBarManager : MonoBehaviour
         foreach (var en in enemies)
             if (en != null) sources.Add(en);
 
-        // 清理已销毁实体的包装缓存
+        // Clean up wrapper cache for destroyed entities
         if (entityWrappers.Count > entities.Length * 2 + 8)
         {
             var dead = new List<ElectricEntity>();

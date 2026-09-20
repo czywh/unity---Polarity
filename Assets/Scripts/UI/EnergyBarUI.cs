@@ -3,64 +3,64 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// UI-01 机器人电量条：屏幕左上角常驻的缓冲式血条 + 低电量警告。
+/// UI-01 Robot energy bar: buffered health-style bar pinned to the top-left of the screen + low-energy warning.
 ///
-/// 层级结构（Canvas 下，从下到上 = 绘制顺序）：
-///   EnergyBar_BG  —— 底槽（深色，空条背景）
-///     ├─ BufferFill —— 缓冲层（浅色，慢速跟随，负责"残影 / 预充"）
-///     └─ FrontFill  —— 主体层（橙色，快速跟随，显示真实电量，画在最上面）
+/// Hierarchy (under Canvas, bottom to top = draw order):
+///   EnergyBar_BG  -- background track (dark, empty-bar background)
+///     ├─ BufferFill -- buffer layer (light, follows slowly, handles "ghost trail / pre-fill")
+///     └─ FrontFill  -- main layer (orange, follows fast, shows real energy, drawn on top)
 ///
-/// 缓冲逻辑：主体层/缓冲层各在"领先方向"用快速度、"追赶方向"用慢速度，
-///          恒满足 buffer >= front，掉电露出残影、充电先浅色预充。
+/// Buffer logic: main/buffer layers each use the fast speed in the "leading direction" and the slow speed in the "catching-up direction",
+///          always keeping buffer >= front; losing energy reveals a ghost trail, charging pre-fills in light color first.
 ///
-/// 低电量警告：电量低于阈值后，主体层随"陷得越深"越红、闪烁越快；
-///            闪烁用提亮实现（alpha 恒为 1），避免透出后面的缓冲层。
+/// Low-energy warning: below the threshold, the main layer gets redder and blinks faster the "deeper it sinks";
+///            blinking is done by brightening (alpha always 1), to avoid showing the buffer layer behind.
 /// </summary>
 [DisallowMultipleComponent]
 public class EnergyBarUI : MonoBehaviour
 {
-    [Header("数据源")]
-    [Tooltip("机器人的 EnergySystem；留空则运行时自动查找场景中的第一个")]
+    [Header("Data Source")]
+    [Tooltip("The robot's EnergySystem; empty = auto-find the first one in the scene at runtime")]
     [SerializeField] private EnergySystem energy;
 
-    [Header("填充图（Filled / Horizontal / Left）")]
-    [Tooltip("橙色主体层")]
+    [Header("Fill Images (Filled / Horizontal / Left)")]
+    [Tooltip("Orange main layer")]
     [SerializeField] private Image frontFill;
-    [Tooltip("浅色缓冲层，画在主体后面")]
+    [Tooltip("Light buffer layer, drawn behind the main layer")]
     [SerializeField] private Image bufferFill;
 
-    [Header("速度（每秒填充比例）")]
-    [Tooltip("领先边速度：掉电时的 front / 充电时的 buffer")]
+    [Header("Speed (fill fraction per second)")]
+    [Tooltip("Leading-edge speed: front when losing energy / buffer when charging")]
     [SerializeField] private float fastSpeed = 8f;
-    [Tooltip("追赶边速度：掉电时的 buffer / 充电时的 front。越小残影停留越久")]
+    [Tooltip("Catch-up edge speed: buffer when losing energy / front when charging. Smaller = ghost trail lingers longer")]
     [SerializeField] private float slowSpeed = 1.5f;
 
-    [Header("缓冲层变色（可选）")]
-    [Tooltip("开启后，掉电和充电时缓冲层用不同颜色")]
+    [Header("Buffer Layer Tint (optional)")]
+    [Tooltip("When enabled, the buffer layer uses different colors for draining and charging")]
     [SerializeField] private bool tintBufferByDirection = false;
     [SerializeField] private Color drainColor = new Color(1f, 0.92f, 0.80f);
     [SerializeField] private Color chargeColor = new Color(0.65f, 1f, 0.75f);
 
-    [Header("低电量警告")]
-    [Tooltip("总开关")]
+    [Header("Low-Energy Warning")]
+    [Tooltip("Master toggle")]
     [SerializeField] private bool enableLowWarning = true;
     [Range(0f, 1f)]
-    [Tooltip("电量低于此比例开始警告（0.2 = 20%）")]
+    [Tooltip("Start warning when energy is below this fraction (0.2 = 20%)")]
     [SerializeField] private float lowThreshold = 0.2f;
-    [Tooltip("最深处（接近耗尽）的警告色")]
+    [Tooltip("Warning color at the deepest point (near empty)")]
     [SerializeField] private Color warningColor = new Color(0.89f, 0.23f, 0.18f);
-    [Tooltip("刚进警告区的闪烁频率")]
+    [Tooltip("Blink frequency when just entering the warning zone")]
     [SerializeField] private float minPulseSpeed = 2f;
-    [Tooltip("接近耗尽时的闪烁频率")]
+    [Tooltip("Blink frequency when near empty")]
     [SerializeField] private float maxPulseSpeed = 8f;
     [Range(0f, 1f)]
-    [Tooltip("脉冲时向白色提亮的幅度，越大闪得越刺眼")]
+    [Tooltip("How much the pulse brightens toward white; larger = harsher flashing")]
     [SerializeField] private float pulseStrength = 0.55f;
 
-    [Header("数值 label（可选）")]
-    [Tooltip("显示电量数字的文本，可留空")]
+    [Header("Value Label (optional)")]
+    [Tooltip("Text showing the energy number; can be left empty")]
     [SerializeField] private TMP_Text label;
-    [Tooltip("Percent = 百分比 (73%)；Value = 当前/最大 (73 / 100)")]
+    [Tooltip("Percent = percentage (73%); Value = current/max (73 / 100)")]
     [SerializeField] private LabelMode labelMode = LabelMode.Percent;
 
     public enum LabelMode { Percent, Value }
@@ -68,18 +68,18 @@ public class EnergyBarUI : MonoBehaviour
     private float frontValue;
     private float bufferValue;
     private float lastTarget;
-    private Color normalColor = new Color(0.98f, 0.45f, 0.12f); // FA741E 兜底
+    private Color normalColor = new Color(0.98f, 0.45f, 0.12f); // FA741E fallback
 
     private void Awake()
     {
-        // 若 Unity 版本较老报错，把 FindFirstObjectByType 换成 FindObjectOfType
+        // If an older Unity version errors, replace FindFirstObjectByType with FindObjectOfType
         if (energy == null)
             energy = FindFirstObjectByType<EnergySystem>();
 
         SetupFillImage(frontFill);
         SetupFillImage(bufferFill);
 
-        // 记住 Inspector 里设的正常色，警告结束后还原
+        // Remember the normal color set in the Inspector; restore it after the warning ends
         if (frontFill != null) normalColor = frontFill.color;
     }
 
@@ -97,11 +97,11 @@ public class EnergyBarUI : MonoBehaviour
         float target = energy.Fraction;
         float dt = Time.deltaTime;
 
-        // 主体层：向下(掉电)领先→快，向上(充电)追赶→慢
+        // Main layer: down (draining) leads → fast, up (charging) catches up → slow
         float fSpeed = (target < frontValue ? fastSpeed : slowSpeed);
         frontValue = Mathf.MoveTowards(frontValue, target, fSpeed * dt);
 
-        // 缓冲层：向上(充电)领先→快，向下(掉电)追赶→慢
+        // Buffer layer: up (charging) leads → fast, down (draining) catches up → slow
         float bSpeed = (target > bufferValue ? fastSpeed : slowSpeed);
         bufferValue = Mathf.MoveTowards(bufferValue, target, bSpeed * dt);
 
@@ -126,7 +126,7 @@ public class EnergyBarUI : MonoBehaviour
         UpdateLabel();
     }
 
-    // 数值 label：直接读 EnergySystem 的 CurrentEnergy / MaxEnergy
+    // Value label: read CurrentEnergy / MaxEnergy directly from EnergySystem
     private void UpdateLabel()
     {
         if (label == null || energy == null) return;
@@ -136,7 +136,7 @@ public class EnergyBarUI : MonoBehaviour
             : $"{Mathf.RoundToInt(energy.Fraction * 100f)}%";
     }
 
-    // 低电量：越低越红、闪烁越快；alpha 恒为 1，避免透出后面的缓冲层
+    // Low energy: lower = redder and faster blinking; alpha always 1 to avoid showing the buffer layer behind
     private void UpdateFrontColor()
     {
         if (frontFill == null) return;
@@ -154,13 +154,13 @@ public class EnergyBarUI : MonoBehaviour
             return;
         }
 
-        // severity：阈值处=0，耗尽=1
+        // severity: 0 at threshold, 1 when empty
         float severity = 1f - Mathf.Clamp01(f / lowThreshold);
 
-        // 底色：正常色 → 警告红
+        // Base color: normal color → warning red
         Color baseC = Color.Lerp(normalColor, warningColor, severity);
 
-        // 脉冲：底色 ↔ 提亮版之间来回，频率随 severity 升高
+        // Pulse: oscillate between base color and brightened version; frequency rises with severity
         float speed = Mathf.Lerp(minPulseSpeed, maxPulseSpeed, severity);
         float pulse = Mathf.Sin(Time.unscaledTime * speed) * 0.5f + 0.5f; // 0..1
         Color highlight = Color.Lerp(baseC, Color.white, pulseStrength);
@@ -178,7 +178,7 @@ public class EnergyBarUI : MonoBehaviour
         img.fillOrigin = (int)Image.OriginHorizontal.Left;
     }
 
-    /// 供外部（如切换角色后重新绑定）调用
+    /// Called externally (e.g. to rebind after switching characters)
     public void SetEnergySource(EnergySystem source)
     {
         energy = source;

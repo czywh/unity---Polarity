@@ -1,54 +1,54 @@
 using UnityEngine;
 
 /// <summary>
-/// CORE-02　角色切换器。按下 Q：在「玩家」与「机器人」之间切换
-///  ① 控制权（启用 / 禁用各自的控制脚本）
-///  ② 相机焦点（OrbitFollowCamera.SetTarget）
-///  ③ 光标
+/// CORE-02 Character switcher. Press Q to switch between "player" and "robot":
+///  (1) control (enable / disable each one's control scripts)
+///  (2) camera focus (OrbitFollowCamera.SetTarget)
+///  (3) cursor
 ///
-/// 本类是【控制权的唯一裁决者】：谁能动，只由这里根据「当前角色 + 是否死亡中 + 是否外部冻结」决定。
-/// 死亡/复活流程不要自己去开关控制脚本，而是调用 RefreshControlState() 让本类重新裁决。
-/// 操作模式等需要"全员冻结"的场景，用 SetExternallyFrozen(true)，避免期间角色死亡触发误开控制。
+/// This class is [the sole authority over control]: who can move is decided only here, from "current character + dying or not + externally frozen or not".
+/// Death/respawn flows must not toggle control scripts themselves; instead call RefreshControlState() so this class re-decides.
+/// For cases that need "freeze everyone" such as Operation Mode, use SetExternallyFrozen(true) so a character dying meanwhile doesn't wrongly re-enable control.
 /// </summary>
 public class CharacterSwitcher : MonoBehaviour
 {
     public enum Character { Player, Robot }
 
-    [Header("控制脚本（切换时启用 / 禁用）")]
-    [Tooltip("控制玩家的脚本，例如 PlayerController、PlayerAimController")]
+    [Header("Control Scripts (enabled / disabled on switch)")]
+    [Tooltip("Scripts that control the player, e.g. PlayerController, PlayerAimController")]
     public MonoBehaviour[] playerControlScripts;
-    [Tooltip("控制机器人的脚本，例如 RobotController、RobotAimController")]
+    [Tooltip("Scripts that control the robot, e.g. RobotController, RobotAimController")]
     public MonoBehaviour[] robotControlScripts;
 
-    [Header("相机")]
+    [Header("Camera")]
     public OrbitFollowCamera cameraController;
     public Transform playerFocus;
     public Transform robotFocus;
 
-    [Header("输入")]
+    [Header("Input")]
     public KeyCode switchKey = KeyCode.Q;
 
-    [Header("光标")]
-    [Tooltip("控制角色时是否锁定并隐藏光标")]
+    [Header("Cursor")]
+    [Tooltip("Whether to lock and hide the cursor while controlling a character")]
     public bool lockCursorForPlayer = true;
 
-    [Header("死亡联动（可选：填了才会在死亡中避免误开控制）")]
+    [Header("Death Link (optional: only when set does it avoid wrongly enabling control while dying)")]
     public CharacterDeathHandler playerDeathHandler;
     public CharacterDeathHandler robotDeathHandler;
 
     public Character Current { get; private set; } = Character.Player;
 
     /// <summary>
-    /// 外部冻结（如操作模式）：为 true 时，RefreshControlState / Apply 一律禁用所有控制，
-    /// 不受"当前角色 / 死亡态"影响。避免操作模式下角色死亡触发 RefreshControlState 误开控制。
+    /// External freeze (e.g. Operation Mode): when true, RefreshControlState / Apply always disable all control,
+    /// regardless of "current character / dying state". Prevents a death in Operation Mode from triggering RefreshControlState and wrongly enabling control.
     /// </summary>
     public bool ExternallyFrozen { get; private set; }
 
-    /// <summary>设置外部冻结状态（由 OperationModeController 调用）。</summary>
+    /// <summary>Set the external freeze state (called by OperationModeController).</summary>
     public void SetExternallyFrozen(bool frozen)
     {
         ExternallyFrozen = frozen;
-        RefreshControlState();   // 立即按新状态重新裁决
+        RefreshControlState();   // Re-decide immediately with the new state
     }
 
     void Start()
@@ -75,7 +75,7 @@ public class CharacterSwitcher : MonoBehaviour
     }
 
     /// <summary>
-    /// 死亡处理器自动注册到这里，免去手动往两个槽里拖引用。
+    /// Death handlers auto-register here, so references don't need to be dragged into the two slots manually.
     /// </summary>
     public void RegisterDeathHandler(bool isPlayer, CharacterDeathHandler handler)
     {
@@ -85,11 +85,11 @@ public class CharacterSwitcher : MonoBehaviour
     }
 
     /// <summary>
-    /// 按【当前角色 + 死亡态 + 外部冻结】重新裁决控制权。
+    /// Re-decide control based on [current character + dying state + external freeze].
     /// </summary>
     public void RefreshControlState()
     {
-        // 操作模式等外部冻结：一律禁用所有控制，无视当前角色 / 死亡态
+        // External freeze such as Operation Mode: disable all control, ignoring current character / dying state
         if (ExternallyFrozen)
         {
             SetEnabled(playerControlScripts, false);
@@ -106,7 +106,7 @@ public class CharacterSwitcher : MonoBehaviour
     {
         bool isPlayer = (target == Character.Player);
 
-        // ① 控制权交接（外部冻结时一律禁用；否则考虑死亡态）
+        // (1) Control handoff (always disabled when externally frozen; otherwise consider dying state)
         if (ExternallyFrozen)
         {
             SetEnabled(playerControlScripts, false);
@@ -118,14 +118,14 @@ public class CharacterSwitcher : MonoBehaviour
             SetEnabled(robotControlScripts, !isPlayer && !IsDying(robotDeathHandler));
         }
 
-        // ② 相机焦点
+        // (2) Camera focus
         Transform focus = isPlayer ? playerFocus : robotFocus;
         if (cameraController != null && focus != null)
             cameraController.SetTarget(focus, instant);
         else
-            Debug.LogWarning("CharacterSwitcher: cameraController 或对应 focus 未指定", this);
+            Debug.LogWarning("CharacterSwitcher: cameraController or the matching focus is not assigned", this);
 
-        // ③ 光标
+        // (3) Cursor
         if (lockCursorForPlayer)
         {
             Cursor.lockState = CursorLockMode.Locked;

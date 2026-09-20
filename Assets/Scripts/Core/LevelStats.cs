@@ -2,24 +2,24 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// CORE　本关统计：用时 / 玩家死亡 / 机器人死亡 / 机器人耗电量。结算界面从这里取数。
+/// CORE Level stats: time / player deaths / robot deaths / robot energy used. The results screen reads from here.
 ///
-/// 启动时机：LevelGoal.Awake() 会在关卡一开始就 GetOrCreate() 出本组件（经 GameResultManager），
-/// 所以计时从第一帧开始。也可以手动放一个到场景里调参数。
-///   · 用时：从本组件启用起累计（受 timeScale 影响）；Stop() 后冻结
-///   · 死亡：订阅场景里所有 CharacterDeathHandler.onDeath，按 CharacterId 分开记玩家 / 机器人
-///   · 耗电：读机器人 EnergySystem.TotalDrained（只加不减，充电不抵扣）
+/// Startup: LevelGoal.Awake() calls GetOrCreate() for this component at level start (via GameResultManager),
+/// so timing starts on the first frame. You can also place one in the scene manually to tweak parameters.
+///   - Time: accumulated from when this component is enabled (affected by timeScale); frozen after Stop()
+///   - Deaths: subscribes to every CharacterDeathHandler.onDeath in the scene, counting player / robot separately by CharacterId
+///   - Energy: reads the robot's EnergySystem.TotalDrained (only increases; charging doesn't offset it)
 /// </summary>
 [DisallowMultipleComponent]
 public class LevelStats : MonoBehaviour
 {
     public static LevelStats Instance { get; private set; }
 
-    [Header("统计范围")]
-    [Tooltip("耗电量只算机器人（CharacterId = Robot）；不勾则把场上所有带 CharacterId 的角色都加起来")]
+    [Header("Stats Scope")]
+    [Tooltip("Count energy used by the robot only (CharacterId = Robot); unchecked sums all characters in the scene with a CharacterId")]
     public bool energyRobotOnly = true;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (read-only at runtime)")]
     [SerializeField] private float elapsedReadout;
     [SerializeField] private int playerDeathsReadout;
     [SerializeField] private int robotDeathsReadout;
@@ -28,7 +28,7 @@ public class LevelStats : MonoBehaviour
     [SerializeField] private int hookedHandlersReadout;
     [SerializeField] private int energySystemsReadout;
 
-    // —— 对外只读 ——
+    // -- Public read-only --
     public float ElapsedSeconds => elapsed;
     public int PlayerDeaths => playerDeaths;
     public int RobotDeaths => robotDeaths;
@@ -39,7 +39,7 @@ public class LevelStats : MonoBehaviour
         get
         {
             if (!running) return frozenEnergy;
-            if (energySystems.Count == 0) CollectEnergy();   // 兜底：还没来得及收集就被读
+            if (energySystems.Count == 0) CollectEnergy();   // Safety net: read before collection had a chance to run
             float sum = 0f;
             foreach (var e in energySystems) if (e != null) sum += e.TotalDrained;
             return sum;
@@ -54,7 +54,7 @@ public class LevelStats : MonoBehaviour
     private readonly List<(CharacterDeathHandler h, UnityEngine.Events.UnityAction a)> deathHooks
         = new List<(CharacterDeathHandler, UnityEngine.Events.UnityAction)>();
 
-    /// <summary>场景里没有时自动造一个</summary>
+    /// <summary>Auto-create one if none exists in the scene</summary>
     public static LevelStats GetOrCreate()
     {
         if (Instance != null) return Instance;
@@ -67,14 +67,14 @@ public class LevelStats : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        // Awake 里就收集：即使本组件是在别人 Awake 里被 AddComponent 出来的，场景对象也都已经存在
+        // Collect in Awake: even if this component was AddComponent'ed in someone else's Awake, scene objects already exist
         HookDeaths();
         CollectEnergy();
     }
 
     private void Start()
     {
-        // 再来一次，兜住"本组件比某些角色更早 Awake"的顺序问题（HookDeaths 内部会去重）
+        // Once more, to cover the order issue where "this component Awakes before some characters" (HookDeaths dedupes internally)
         HookDeaths();
         CollectEnergy();
     }
@@ -97,11 +97,11 @@ public class LevelStats : MonoBehaviour
         energySystemsReadout = energySystems.Count;
     }
 
-    /// <summary>通关 / 结束时冻结所有计数</summary>
+    /// <summary>Freeze all counters on level clear / end</summary>
     public void Stop()
     {
         if (!running) return;
-        frozenEnergy = EnergyUsed;   // 先读（读的时候还是 running），再冻结
+        frozenEnergy = EnergyUsed;   // Read first (still running while reading), then freeze
         running = false;
     }
 
@@ -110,7 +110,7 @@ public class LevelStats : MonoBehaviour
         elapsed = 0f; playerDeaths = 0; robotDeaths = 0; frozenEnergy = 0f; running = true;
     }
 
-    /// <summary>格式化用时：mm:ss.ff</summary>
+    /// <summary>Formatted time: mm:ss.ff</summary>
     public string FormatTime()
     {
         int m = (int)(elapsed / 60f);
@@ -118,7 +118,7 @@ public class LevelStats : MonoBehaviour
         return $"{m:00}:{s:00.00}";
     }
 
-    // ── 死亡 ──
+    // -- Deaths --
     private void HookDeaths()
     {
         foreach (var h in FindObjectsByType<CharacterDeathHandler>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
@@ -146,7 +146,7 @@ public class LevelStats : MonoBehaviour
     private void OnPlayerDeath() { if (running) playerDeaths++; }
     private void OnRobotDeath()  { if (running) robotDeaths++; }
 
-    // ── 耗电 ──
+    // -- Energy used --
     private void CollectEnergy()
     {
         energySystems.Clear();

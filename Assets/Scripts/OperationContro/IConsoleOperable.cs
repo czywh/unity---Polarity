@@ -1,5 +1,5 @@
 /// <summary>
-/// 操作模式下可被点击操作的物体。玩家在操作台视角左键点中它时，OperationModeController 调 Operate()。
+/// An object that can be clicked and operated in Operation Mode. When the player left-clicks it from the console view, OperationModeController calls Operate().
 /// </summary>
 public interface IConsoleOperable
 {

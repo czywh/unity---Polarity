@@ -4,50 +4,50 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
-/// UI　操作模式浮动开关：进操作模式后，为当前操作台的每个 ConsoleOperable 在【物体旁边】
-/// 生成一个 SCI-FI GUI Pack 的 toggle_02 开关（off/on 两张图），点击即调 Operate()。
+/// UI  Operation Mode floating toggles: after entering Operation Mode, for each ConsoleOperable of the current console, a
+/// SCI-FI GUI Pack toggle_02 switch (off/on sprites) is spawned [next to the object]; clicking it calls Operate().
 ///
-/// 不是固定菜单栏，而是每个物体旁边一个开关。位置怎么来的：
-///   · 进操作模式时把该物体的【固定锚点】ConsoleOperable.ButtonAnchorFixed
-///     用【操作模式那台相机】投影到屏幕，开关就钉在那儿；
-///   · 固定锚点是物体 Start() 吸附到 A 状态时记下的世界坐标，之后物体移到 B、转到哪都不影响 ——
-///     所以无论什么时候进操作模式、桥在哪个状态，按钮都在同一个地方；
-///   · 正交相机下 WorldToScreenPoint 精确对位，开关落点就是物体在屏幕上的实际位置，
-///     不是写死的屏幕坐标 —— 所以换关卡、换机位、换分辨率都不会错位（视差问题的解法）。
-///   · 想让开关跟着物体动，勾 followTarget。
+/// Not a fixed menu bar, but one toggle beside each object. How the position is derived:
+///   - On entering Operation Mode, the object's [fixed anchor] ConsoleOperable.ButtonAnchorFixed
+///     is projected to screen with [the Operation Mode camera], and the toggle is pinned there;
+///   - The fixed anchor is the world position recorded when the object snaps to state A in Start(); moving to B or rotating afterward doesn't affect it --
+///     so no matter when you enter Operation Mode or what state the bridge is in, the button is in the same place;
+///   - With an orthographic camera WorldToScreenPoint aligns exactly, so the toggle lands at the object's actual screen position,
+///     not a hardcoded screen coordinate -- so changing level, camera position or resolution won't misalign it (the fix for parallax issues).
+///   - To make toggles follow the object, check followTarget.
 ///
-/// 零配置：Canvas 和每个开关都在运行时用代码生成，toggle 图从 SCI-FI GUI Pack 的
-/// Resources 目录 Resources.Load 出来。想调开关出现的位置，去对应 ConsoleOperable 上
-/// 填 buttonAnchor（拖个空子物体）或改 buttonLocalOffset。
+/// Zero config: the Canvas and each toggle are generated in code at runtime; toggle sprites are loaded via Resources.Load from
+/// the SCI-FI GUI Pack Resources folder. To adjust where a toggle appears, go to the corresponding ConsoleOperable and
+/// set buttonAnchor (drag in an empty child) or change buttonLocalOffset.
 ///
-/// 类名沿用 ConsoleTogglePanel 以兼容 OperationModeController 的引用；它现在做的是浮动开关，不是面板。
+/// Class name stays ConsoleTogglePanel for compatibility with OperationModeController's reference; it now does floating toggles, not a panel.
 /// </summary>
 [DisallowMultipleComponent]
 public class ConsoleTogglePanel : MonoBehaviour
 {
-    [Header("Toggle 图（留空自动从 SCI-FI GUI Pack 的 Resources 加载）")]
+    [Header("Toggle Sprites (empty = auto-load from SCI-FI GUI Pack Resources)")]
     public Sprite toggleOffSprite;
     public Sprite toggleOnSprite;
     public string toggleOffResourcePath = "Sprites/Button/toggle_02_off";
     public string toggleOnResourcePath = "Sprites/Button/toggle_02_on";
 
-    [Header("开关外观")]
-    [Tooltip("开关显示尺寸（像素）；原图 394×164，默认缩到约 1/3")]
+    [Header("Toggle Appearance")]
+    [Tooltip("Toggle display size (pixels); source image is 394x164, scaled to about 1/3 by default")]
     public Vector2 toggleSize = new Vector2(132f, 55f);
-    [Tooltip("在物体屏幕投影点基础上，再加一点像素偏移（微调，避免正好压在物体上）")]
+    [Tooltip("Extra pixel offset on top of the object's screen projection (fine-tune, avoids covering the object)")]
     public Vector2 screenPixelOffset = new Vector2(0f, 0f);
-    [Tooltip("物体跑到相机背后 / 视野外时隐藏开关")]
+    [Tooltip("Hide the toggle when the object is behind the camera / out of view")]
     public bool hideWhenOffscreen = true;
 
-    [Header("跟随")]
-    [Tooltip("默认关：位置在进入操作模式时算一次就固定。\n勾上则每帧重算，开关跟着物体平移 / 旋转一起动")]
+    [Header("Follow")]
+    [Tooltip("Off by default: position is computed once on entering Operation Mode and stays fixed.\nWhen checked, it is recomputed every frame and the toggle moves / rotates with the object")]
     public bool followTarget = false;
 
-    [Header("快捷键")]
-    [Tooltip("面板显示期间，数字键 1~9 触发第 N 个开关")]
+    [Header("Hotkeys")]
+    [Tooltip("While the panel is shown, number keys 1~9 trigger the Nth toggle")]
     public bool numberHotkeys = true;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (runtime read-only)")]
     [SerializeField] private bool visible;
     [SerializeField] private int buttonCount;
 
@@ -69,17 +69,17 @@ public class ConsoleTogglePanel : MonoBehaviour
     }
 
     // ────────────────────────────────────────────────────────────────────
-    //  对外接口
+    //  Public API
     // ────────────────────────────────────────────────────────────────────
 
-    /// <summary>场景里没有本组件时由 OperationModeController 调用</summary>
+    /// <summary>Called by OperationModeController when the scene has no instance of this component</summary>
     public static ConsoleTogglePanel CreateDefault()
     {
         var go = new GameObject("ConsoleToggleButtons");
         return go.AddComponent<ConsoleTogglePanel>();
     }
 
-    /// <summary>显示开关。cam 传操作模式用的那台相机（用于把物体投影到屏幕）</summary>
+    /// <summary>Show toggles. cam is the Operation Mode camera (used to project objects to screen)</summary>
     public void Show(ConsoleStation console, Camera projectionCamera)
     {
         EnsureBuilt();
@@ -87,7 +87,7 @@ public class ConsoleTogglePanel : MonoBehaviour
 
         CurrentConsole = console;
         cam = projectionCamera != null ? projectionCamera : Camera.main;
-        if (cam == null) Debug.LogWarning("[操作开关] 没有可用相机，开关无法定位", this);
+        if (cam == null) Debug.LogWarning("[Console Toggle] No camera available; toggles can't be positioned", this);
 
         var ops = console != null ? console.GetOperables() : new ConsoleOperable[0];
         for (int i = 0; i < ops.Length; i++) followers.Add(BuildFollower(ops[i], i));
@@ -95,10 +95,10 @@ public class ConsoleTogglePanel : MonoBehaviour
         buttonCount = followers.Count;
         canvas.gameObject.SetActive(true);
         visible = true;
-        Reposition();   // 算一次位置并钉在那儿（followTarget 关时这就是最终位置）
+        Reposition();   // compute position once and pin it (with followTarget off this is final)
     }
 
-    /// <summary>隐藏开关并解除订阅</summary>
+    /// <summary>Hide toggles and unsubscribe</summary>
     public void Hide()
     {
         ClearFollowers();
@@ -109,7 +109,7 @@ public class ConsoleTogglePanel : MonoBehaviour
     }
 
     // ────────────────────────────────────────────────────────────────────
-    //  快捷键 / 可选跟随
+    //  Hotkeys / optional follow
     // ────────────────────────────────────────────────────────────────────
 
     private void Update()
@@ -123,8 +123,8 @@ public class ConsoleTogglePanel : MonoBehaviour
             }
     }
 
-    // 默认不跟随：位置在 Show() 里算过一次就固定，这里什么都不做。
-    // 勾了 followTarget 才逐帧重算。
+    // No follow by default: position is computed once in Show() and fixed; nothing to do here.
+    // Only recomputed per frame when followTarget is checked.
     private void LateUpdate()
     {
         if (visible && followTarget) Reposition();
@@ -137,7 +137,7 @@ public class ConsoleTogglePanel : MonoBehaviour
         {
             if (f.operable == null || f.root == null) continue;
 
-            // followTarget 关（默认）：用物体在 A 状态时记下的固定锚点，桥怎么动按钮都不动
+            // followTarget off (default): use the fixed anchor recorded in state A; the button stays put however the bridge moves
             Vector3 sp = cam.WorldToScreenPoint(f.operable.GetButtonAnchor(followTarget));
             bool onscreen = sp.z > 0f &&
                             (!hideWhenOffscreen ||
@@ -147,7 +147,7 @@ public class ConsoleTogglePanel : MonoBehaviour
             f.root.gameObject.SetActive(onscreen);
             if (!onscreen) continue;
 
-            // 屏幕像素 → Overlay 画布局部坐标（画布用 ConstantPixelSize，scaleFactor=1，二者一致）
+            // Screen pixels → Overlay canvas local coords (canvas uses ConstantPixelSize, scaleFactor=1, so they match)
             f.root.position = new Vector3(sp.x + screenPixelOffset.x, sp.y + screenPixelOffset.y, 0f);
         }
     }
@@ -155,7 +155,7 @@ public class ConsoleTogglePanel : MonoBehaviour
     private void OnDisable() => ClearFollowers();
 
     // ────────────────────────────────────────────────────────────────────
-    //  单个浮动开关
+    //  Single floating toggle
     // ────────────────────────────────────────────────────────────────────
 
     private Follower BuildFollower(ConsoleOperable op, int index)
@@ -166,7 +166,7 @@ public class ConsoleTogglePanel : MonoBehaviour
         go.transform.SetParent(canvasRect, false);
         var rt = go.GetComponent<RectTransform>();
         rt.sizeDelta = toggleSize;
-        rt.pivot = new Vector2(0.5f, 0.5f);   // 以物体投影点为中心
+        rt.pivot = new Vector2(0.5f, 0.5f);   // centered on the object's projected point
         f.root = rt;
 
         f.off = CreateFullImage(rt, "off", toggleOffSprite);
@@ -175,14 +175,14 @@ public class ConsoleTogglePanel : MonoBehaviour
         var btn = go.AddComponent<Button>();
         btn.transition = Selectable.Transition.None;
         btn.targetGraphic = f.off;
-        // 不参与键盘 / 手柄导航：否则按方向键会选中它，Submit 键（空格/回车）就会触发
+        // Exclude from keyboard / gamepad navigation: otherwise arrow keys select it and Submit (Space/Enter) triggers it
         btn.navigation = new Navigation { mode = Navigation.Mode.None };
         var captured = op;
         btn.onClick.AddListener(() =>
         {
             captured.Operate();
-            // 点完立刻取消选中。UGUI 会把刚点过的 Button 记为"当前选中项"，
-            // 之后按 Submit（默认空格 = 跳跃键）会再次触发它 —— 这就是"按空格桥会动"的原因
+            // Deselect right after clicking. UGUI remembers the just-clicked Button as the "current selection",
+            // and pressing Submit afterwards (Space by default = jump) triggers it again -- this is why "pressing Space moved the bridge"
             if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
         });
 
@@ -212,7 +212,7 @@ public class ConsoleTogglePanel : MonoBehaviour
     }
 
     // ────────────────────────────────────────────────────────────────────
-    //  画布（只建一次）
+    //  Canvas (built once)
     // ────────────────────────────────────────────────────────────────────
 
     private void EnsureBuilt()
@@ -226,7 +226,7 @@ public class ConsoleTogglePanel : MonoBehaviour
         canvas = cgo.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 50;
-        // ConstantPixelSize + scaleFactor 1：画布局部坐标 == 屏幕像素，Reposition 直接用投影像素
+        // ConstantPixelSize + scaleFactor 1: canvas local coords == screen pixels, Reposition uses projected pixels directly
         var scaler = cgo.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
         scaler.scaleFactor = 1f;
@@ -254,8 +254,8 @@ public class ConsoleTogglePanel : MonoBehaviour
         if (toggleOffSprite == null) toggleOffSprite = Resources.Load<Sprite>(toggleOffResourcePath);
         if (toggleOnSprite == null) toggleOnSprite = Resources.Load<Sprite>(toggleOnResourcePath);
         if (toggleOffSprite == null || toggleOnSprite == null)
-            Debug.LogWarning($"[操作开关] toggle 图没加载到：{toggleOffResourcePath} / {toggleOnResourcePath}。" +
-                             "确认 SCI-FI GUI Pack 的 Resources 目录还在，或手动把两张 Sprite 拖到 Inspector", this);
+            Debug.LogWarning($"[Console Toggle] Toggle sprites failed to load: {toggleOffResourcePath} / {toggleOnResourcePath}. " +
+                             "Make sure the SCI-FI GUI Pack Resources folder still exists, or drag the two Sprites into the Inspector manually", this);
     }
 
     private static void EnsureEventSystem()
@@ -263,6 +263,6 @@ public class ConsoleTogglePanel : MonoBehaviour
         if (EventSystem.current != null) return;
         if (FindFirstObjectByType<EventSystem>() != null) return;
         var es = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
-        Debug.Log("[操作开关] 场景里没有 EventSystem，已自动创建一个（UI 点击需要它）", es);
+        Debug.Log("[Console Toggle] No EventSystem in scene; created one automatically (needed for UI clicks)", es);
     }
 }

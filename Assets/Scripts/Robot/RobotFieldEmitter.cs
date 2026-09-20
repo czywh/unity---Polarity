@@ -1,41 +1,41 @@
 using UnityEngine;
 
 /// <summary>
-/// ROBOT-04　电子领域发射器：挂在机器人上，实现 IFieldEmitter。
-/// 机器人视角下按 E → ToggleField()：以机器人为中心生成 / 销毁即时电子领域。
+/// ROBOT-04  Electric field emitter: attach to the robot; implements IFieldEmitter.
+/// Pressing E in robot view -> ToggleField(): spawns / destroys an instant electric field centered on the robot.
 ///
-/// 电量联动（CORE-06）：
-///  · 开领域前检查电量，空电则拒绝开启；
-///  · 领域开启期间持续耗电（即使切到本体，领域仍在，照常耗电）；
-///  · 电量耗尽 → 自动关闭领域。
+/// Energy link (CORE-06):
+///  - Checks energy before opening the field; refuses to open when empty;
+///  - Drains energy continuously while the field is open (even after switching to the player body, the field stays and keeps draining);
+///  - Energy depleted -> field closes automatically.
 ///
-/// 领域视觉（可选）：在下面配 fieldVfxPrefab（如 shield 粒子），
-/// 生成领域时通过 ElectricField.SetVisualPrefab 传入；留空则回退到调试球。
+/// Field visuals (optional): assign fieldVfxPrefab below (e.g. shield particles),
+/// passed in via ElectricField.SetVisualPrefab when the field is spawned; falls back to the debug sphere if left empty.
 /// </summary>
 public class RobotFieldEmitter : MonoBehaviour, IFieldEmitter
 {
-    [Header("领域参数")]
+    [Header("Field Parameters")]
     public float fieldRadius = 3f;
-    [Tooltip("领域中心；留空用机器人自身")]
+    [Tooltip("Field center; uses the robot itself if left empty")]
     public Transform fieldOrigin;
-    [Tooltip("可选自定义领域预制体；留空则运行时生成")]
+    [Tooltip("Optional custom field prefab; generated at runtime if left empty")]
     public ElectricField fieldPrefab;
 
-    [Header("电量消耗")]
-    [Tooltip("领域开启时每秒消耗的电量")]
+    [Header("Energy Consumption")]
+    [Tooltip("Energy consumed per second while the field is open")]
     public float drainPerSecond = 10f;
 
-    [Header("领域视觉 VFX")]
-    [Tooltip("领域的能量场 VFX 预制体（如 shield 粒子）。留空则用下面的调试球")]
+    [Header("Field Visual VFX")]
+    [Tooltip("Energy-field VFX prefab for the field (e.g. shield particles). Uses the debug sphere below if left empty")]
     public GameObject fieldVfxPrefab;
-    [Tooltip("VFX 预制体的设计半径。shield 的 Start Size=7 → 先填 3.5，再对着线框球微调")]
+    [Tooltip("Design radius of the VFX prefab. shield's Start Size=7 -> enter 3.5 first, then fine-tune against the wireframe sphere")]
     public float vfxDesignRadius = 2.1f;
-    [Tooltip("把 VFX 自动缩放到 fieldRadius")]
+    [Tooltip("Automatically scale the VFX to fieldRadius")]
     public bool autoScaleVfx = true;
 
-    [Header("调试可视化")]
+    [Header("Debug Visualization")]
     public bool showDebugSphere = true;
-    [Tooltip("领域材质；留空自动用半透明调试材质")]
+    [Tooltip("Field material; uses a semi-transparent debug material if left empty")]
     public Material debugMaterial;
 
     private ElectricField activeField;
@@ -47,7 +47,7 @@ public class RobotFieldEmitter : MonoBehaviour, IFieldEmitter
         energy = GetComponent<EnergySystem>();
     }
 
-    // 由 RobotController 在按下 E 时调用
+    // Called by RobotController when E is pressed
     public void ToggleField()
     {
         if (activeField != null) Close();
@@ -56,10 +56,10 @@ public class RobotFieldEmitter : MonoBehaviour, IFieldEmitter
 
     private void Open()
     {
-        // 没电不能开
+        // Can't open without energy
         if (energy != null && energy.IsEmpty)
         {
-            Debug.Log("[Field] 电量耗尽，无法开启领域", this);
+            Debug.Log("[Field] Out of energy, cannot open the field", this);
             return;
         }
 
@@ -81,7 +81,7 @@ public class RobotFieldEmitter : MonoBehaviour, IFieldEmitter
         activeField.showDebugSphere = showDebugSphere;
         if (debugMaterial != null) activeField.debugMaterial = debugMaterial;
 
-        // 配了 VFX 才覆盖领域视觉；留空则尊重领域预制体自带的设置 / 回退到调试球
+        // Only override field visuals if a VFX is assigned; if empty, respect the field prefab's own settings / fall back to the debug sphere
         if (fieldVfxPrefab != null)
         {
             activeField.SetVisualPrefab(fieldVfxPrefab);
@@ -92,7 +92,7 @@ public class RobotFieldEmitter : MonoBehaviour, IFieldEmitter
 
     private void Update()
     {
-        // 领域开启期间持续耗电；耗尽则自动关闭
+        // Drain energy continuously while the field is open; close automatically when depleted
         if (activeField != null && energy != null)
         {
             energy.Drain(drainPerSecond * Time.deltaTime);

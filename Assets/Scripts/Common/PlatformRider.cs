@@ -1,57 +1,57 @@
 using UnityEngine;
 
 /// <summary>
-/// COMMON　平台骑乘。挂在 player / robot 的根物体上（与 CharacterController 同物体）。
+/// COMMON - Platform riding. Attach to the root object of player / robot (same object as the CharacterController).
 ///
-/// 解决的问题：CharacterController 不受移动中碰撞体的带动。操作模式下点击让
-/// ConsoleOperable 平台平移 / 绕枢轴旋转时，站在上面的角色相当于被"抽走了地板"，
-/// 会原地停住、被平台推挤，甚至直接落进死亡区域。
+/// Problem solved: CharacterController isn't carried by moving colliders. When clicking in Operation Mode moves a
+/// ConsoleOperable platform (translate / rotate around pivot), characters standing on it effectively have "the floor pulled out",
+/// so they stop in place, get pushed by the platform, or even fall straight into a death zone.
 ///
-/// 做法：每帧向脚下探测当前踩着的物体，把角色当前位置换算到该物体【上一帧】的
-/// 坐标系里，再用【这一帧】的变换还原成世界坐标，两者之差就是平台这一帧的刚体运动量，
-/// 通过 controller.Move() 补给角色。
-///   · 只补平台运动，不会抵消角色自己的移动（局部坐标每帧现算，不缓存旧位置）；
-///   · 平移与绕枢轴旋转都能跟随；
-///   · 站在静止地面上算出来的差值恒为 0，对普通地形零副作用，因此可以常驻启用。
+/// Approach: each frame, probe for the object underfoot, convert the character's current position into that object's [previous-frame]
+/// space, then back to world space using [this frame's] transform; the difference is the platform's rigid motion this frame,
+/// applied to the character via controller.Move().
+///   - Only compensates platform motion, never cancels the character's own movement (local coords recomputed each frame, no cached old position);
+///   - Follows both translation and rotation around a pivot;
+///   - On static ground the delta is always 0, so zero side effects on normal terrain; safe to keep always enabled.
 ///
-/// 执行顺序 200：确保在 ConsoleOperable（平台自身移动）与各角色控制器
-/// （RobotController / RobotConsoleMover / PassiveFall，均为默认 0）之后运行，
-/// 补偿量基于本帧最终状态计算，不会出现延迟一帧造成的抖动或脚下打滑。
+/// Execution order 200: ensures it runs after ConsoleOperable (platform movement) and the character controllers
+/// (RobotController / RobotConsoleMover / PassiveFall, all default 0), so the
+/// compensation uses this frame's final state, with no one-frame-lag jitter or foot sliding.
 /// </summary>
 [DefaultExecutionOrder(200)]
-[DisallowMultipleComponent]   // 挂两份会把平台位移补偿两次
+[DisallowMultipleComponent]   // Two copies would compensate platform motion twice
 [RequireComponent(typeof(CharacterController))]
 public class PlatformRider : MonoBehaviour
 {
-    [Header("脚下探测")]
-    [Tooltip("向下探测距离。略大于 CharacterController 的 Skin Width 即可；台阶多的关卡可适当调大")]
+    [Header("Ground Probe")]
+    [Tooltip("Downward probe distance. Slightly larger than CharacterController's Skin Width is enough; increase for levels with many steps")]
     public float groundProbeDistance = 0.35f;
-    [Tooltip("哪些层可以作为“可骑乘的地板”。默认全选；静止地面算出的位移恒为 0，不必特意排除")]
+    [Tooltip("Which layers count as a \"rideable floor\". Default is all; static ground yields zero delta, no need to exclude it")]
     public LayerMask groundMask = ~0;
-    [Tooltip("接触面法线 y 分量的下限。低于此值视为墙面而非地板，不跟随")]
+    [Tooltip("Minimum y component of the contact normal. Below this it counts as a wall, not a floor, and isn't followed")]
     [Range(0f, 1f)] public float minGroundNormalY = 0.5f;
 
-    [Header("跟随内容")]
-    [Tooltip("跟随平台的平移，以及绕平台枢轴旋转带来的位移")]
+    [Header("Follow Settings")]
+    [Tooltip("Follow platform translation, and displacement caused by rotation around the platform pivot")]
     public bool inheritPosition = true;
-    [Tooltip("跟随平台的 Y 轴自转（角色自身也跟着转向）。\n操作模式下机器人朝向由鼠标接管，开了会互相打架，默认关闭")]
+    [Tooltip("Follow the platform's Y-axis spin (character turns with it too).\nIn Operation Mode the robot's facing is mouse-controlled; enabling this makes them fight, so it's off by default")]
     public bool inheritYaw = false;
 
-    [Header("调试")]
-    [Tooltip("打开后，每次切换脚下平台都会在 Console 打印")]
+    [Header("Debug")]
+    [Tooltip("When on, logs to the Console every time the platform underfoot changes")]
     public bool verboseLog = false;
-    [Header("调试（运行时只读）")]
-    [SerializeField] private string standingOnReadout = "(无)";
+    [Header("Debug (runtime, read-only)")]
+    [SerializeField] private string standingOnReadout = "(none)";
 
     private CharacterController controller;
-    private CharacterDeathHandler death;      // 可空
+    private CharacterDeathHandler death;      // Optional
 
-    private Transform platform;               // 当前踩着的物体
-    private Vector3 lastPlatformPos;          // 上一帧该物体的世界位置
-    private Quaternion lastPlatformRot;       // 上一帧该物体的世界旋转
+    private Transform platform;               // Object currently underfoot
+    private Vector3 lastPlatformPos;          // That object's world position last frame
+    private Quaternion lastPlatformRot;       // That object's world rotation last frame
     private readonly RaycastHit[] hits = new RaycastHit[8];
 
-    /// <summary>当前踩着的物体（悬空时为 null）。供动画 / 音效等外部逻辑读取。</summary>
+    /// <summary>Object currently underfoot (null when airborne). For external logic such as animation / audio.</summary>
     public Transform StandingOn => platform;
 
     private void Awake()
@@ -64,7 +64,7 @@ public class PlatformRider : MonoBehaviour
 
     private void Update()
     {
-        // 死亡 / 复活传送期间位置由 CharacterDeathHandler 独占，这里不插手
+        // During death / respawn teleport, position is owned by CharacterDeathHandler; stay out of it
         if ((death != null && death.IsDying) || !controller.enabled)
         {
             Release();
@@ -73,7 +73,7 @@ public class PlatformRider : MonoBehaviour
 
         Transform found = ProbeGround();
 
-        // 刚踩上新平台（或落地）：只记录基准，这一帧没有可用的位移量
+        // Just stepped onto a new platform (or landed): only record the baseline, no usable delta this frame
         if (found != platform)
         {
             Attach(found);
@@ -83,7 +83,7 @@ public class PlatformRider : MonoBehaviour
 
         if (inheritPosition)
         {
-            // 角色当前位置 →（平台上一帧坐标系）→（平台这一帧坐标系）→ 世界坐标
+            // Character position -> (platform's last-frame space) -> (platform's this-frame space) -> world space
             Matrix4x4 prev = Matrix4x4.TRS(lastPlatformPos, lastPlatformRot, Vector3.one);
             Matrix4x4 now = Matrix4x4.TRS(platform.position, platform.rotation, Vector3.one);
 
@@ -102,13 +102,13 @@ public class PlatformRider : MonoBehaviour
         CacheBasis();
     }
 
-    /// 从胶囊下半球中心向下做球形扫描，找脚下最近的、法线够平的物体
+    /// Sphere-cast down from the capsule's lower hemisphere center to find the nearest object underfoot with a flat enough normal
     private Transform ProbeGround()
     {
         float sideScale = Mathf.Max(Mathf.Abs(transform.lossyScale.x), Mathf.Abs(transform.lossyScale.z));
         float upScale = Mathf.Abs(transform.lossyScale.y);
 
-        float radius = Mathf.Max(0.01f, controller.radius * sideScale * 0.95f);   // 略缩，避免起点就与地面重叠
+        float radius = Mathf.Max(0.01f, controller.radius * sideScale * 0.95f);   // Slightly shrunk to avoid overlapping the ground at the start
         float halfHeight = Mathf.Max(controller.height * upScale * 0.5f, radius);
 
         Vector3 center = transform.TransformPoint(controller.center);
@@ -124,9 +124,9 @@ public class PlatformRider : MonoBehaviour
         {
             Collider col = hits[i].collider;
             if (col == null) continue;
-            if (col.transform == transform || col.transform.IsChildOf(transform)) continue;  // 别踩到自己
-            if (hits[i].distance <= 0f) continue;              // 起点重叠，法线无效
-            if (hits[i].normal.y < minGroundNormalY) continue; // 墙面 / 陡坡，不算地板
+            if (col.transform == transform || col.transform.IsChildOf(transform)) continue;  // Don't stand on yourself
+            if (hits[i].distance <= 0f) continue;              // Overlapping at start, normal invalid
+            if (hits[i].normal.y < minGroundNormalY) continue; // Wall / steep slope, not a floor
             if (hits[i].distance < bestDistance)
             {
                 bestDistance = hits[i].distance;
@@ -139,10 +139,10 @@ public class PlatformRider : MonoBehaviour
     private void Attach(Transform t)
     {
         if (verboseLog && t != platform)
-            Debug.Log($"[平台骑乘] {name} 脚下：{(platform ? platform.name : "(无)")} → {(t ? t.name : "(无)")}", this);
+            Debug.Log($"[PlatformRider] {name} underfoot: {(platform ? platform.name : "(none)")} -> {(t ? t.name : "(none)")}", this);
 
         platform = t;
-        standingOnReadout = t != null ? t.name : "(无)";
+        standingOnReadout = t != null ? t.name : "(none)";
         if (t != null) CacheBasis();
     }
 
@@ -156,7 +156,7 @@ public class PlatformRider : MonoBehaviour
     {
         if (platform == null) return;
         platform = null;
-        standingOnReadout = "(无)";
+        standingOnReadout = "(none)";
     }
 
     private void OnDrawGizmosSelected()

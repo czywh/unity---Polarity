@@ -2,103 +2,197 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// LEVEL　双向传送门。挂在两面 Energy wall 上，互相把对方拖进 linkedPortal，
-/// 角色（玩家 / 机器人 / 敌人，任何带 CharacterController 或 Rigidbody 的物体）穿过 A 就出现在 B，反之亦然。
+/// LEVEL  Two-way portal. Put one on each of two Energy walls and drag each into the other's linkedPortal.
+/// Characters (player / robot / enemy, anything with a CharacterController or Rigidbody) that pass through A appear at B, and vice versa.
 ///
-/// 工作方式：
-///   · 本物体需要一个【Trigger】碰撞体（脚本会在运行时自动把第一个 Collider 设成 isTrigger）；
-///   · 进入触发器 → 传送到对方门的出口点（exitPoint，留空则用对方门位置 + 对方 forward × exitOffset）；
-///   · 出口方式两种（exitMode）：KeepDirection = 朝向不变、从 B 的另一侧出来继续往前走（默认，适合两面墙朝向相同）；
-///     MirrorThroughPortal = 从 A 正面进就从 B 正面出，朝向随门的相对角度旋转（《传送门》式）；
-///   · 传送后对目标加一个短暂冷却，防止落在对方门里立刻被传回来（乒乓）；
-///   · CharacterController 传送前要先关掉再开（与 CharacterDeathHandler.TeleportTo 同一做法）；
-///   · 主角传送后相机瞬移过去（OrbitFollowCamera.SetTarget(target, instant:true)），不然会飞一段。
+/// How it works:
+///   - This object needs a [Trigger] collider (the script auto-sets the first Collider to isTrigger at runtime);
+///   - Entering the trigger -> teleport to the other portal's exit point (exitPoint; if empty, other portal position + its forward x exitOffset);
+///   - Two exit modes (exitMode): KeepDirection = facing unchanged, come out the far side of B and keep walking (default, suits two walls facing the same way);
+///     MirrorThroughPortal = enter A's front, exit B's front; facing rotates by the portals' relative angle ("Portal" style);
+///   - After teleporting, the target gets a short cooldown so it is not immediately sent back when landing in the other portal (ping-pong);
+///   - CharacterController must be disabled then re-enabled around the teleport (same as CharacterDeathHandler.TeleportTo);
+///   - When the main character teleports, the camera snaps over (OrbitFollowCamera.SetTarget(target, instant:true)), otherwise it flies across;
+///     in Operation Mode the camera is fixed at the console view (OrbitFollowCamera disabled), so the camera is left alone;
+///   - Teleporting cancels any ongoing right-click pathfinding (PlayerConsoleNavigator.Stop), so the character does not walk back through the portal along the old path.
 ///
-/// 挂法：两面墙各挂一个 Portal，把对方拖进 Linked Portal；也可以只在其中一个上填，另一个会自动回填。
+/// Power (requirePower, on by default): the portal starts OFF -- the energy wall mesh is hidden and nothing is teleported.
+///   It turns on only while an electric field (the robot's field or one opened by an Energy Relay) touches the wall's
+///   trigger collider (field sphere within powerMargin of the collider). When the field leaves, the wall switches off again
+///   after powerLinger seconds. The pair is powered together (powerLinkedToo, default): a field at either wall opens both
+///   ends and both walls become visible; uncheck it on both to make each end need its own field.
+///
+/// Setup: put a Portal on each wall and drag the other into Linked Portal; you can also fill in only one, the other is back-filled automatically.
 /// </summary>
 [DisallowMultipleComponent]
 public class Portal : MonoBehaviour
 {
-    [Header("连接")]
-    [Tooltip("对面的门。只填一边也行，Awake 时会自动把另一边连回来")]
+    [Header("Link")]
+    [Tooltip("The portal on the other side. Filling only one side is fine; the other side is linked back in Awake")]
     public Portal linkedPortal;
 
-    [Header("出口")]
-    [Tooltip("出口点（可选）：拖一个空子物体摆到希望角色出现的位置和朝向。留空则用本门位置 + forward × exitOffset")]
+    [Header("Exit")]
+    [Tooltip("Exit point (optional): an empty child placed where/facing the character should appear. If empty, uses this portal's position + forward x exitOffset")]
     public Transform exitPoint;
-    [Tooltip("没有 exitPoint 时，从门中心沿 forward 推出去多远（避免出生时还在触发器里）")]
+    [Tooltip("Without exitPoint: how far to push out from the portal center along forward (so the character does not spawn inside the trigger)")]
     public float exitOffset = 1.5f;
     public enum ExitMode
     {
-        [InspectorName("保持方向（穿过 A 后从 B 另一侧出来，继续往前走）")] KeepDirection,
-        [InspectorName("镜像（从 A 正面进 → 从 B 正面出，朝向随门旋转）")] MirrorThroughPortal,
+        [InspectorName("Keep direction (pass through A, exit the far side of B, keep going)")] KeepDirection,
+        [InspectorName("Mirror (enter A's front -> exit B's front, facing rotates with the portal)")] MirrorThroughPortal,
     }
-    [Tooltip("KeepDirection：角色世界朝向不变，从 B 的\"前进方向那一侧\"出来，适合两面墙朝向相同的关卡；\nMirrorThroughPortal：像《传送门》那样，朝向随两扇门的相对角度旋转")]
+    [Tooltip("KeepDirection: character world facing is unchanged, exits on B's \"direction of travel\" side; suits levels where both walls face the same way;\nMirrorThroughPortal: like \"Portal\", facing rotates by the relative angle of the two portals")]
     public ExitMode exitMode = ExitMode.KeepDirection;
 
-    [Header("过滤")]
-    [Tooltip("哪些层的物体可以传送；默认全部")]
+    [Header("Filter")]
+    [Tooltip("Which layers can be teleported; all by default")]
     public LayerMask affectedLayers = ~0;
-    [Tooltip("只传送根物体（碰撞体在子物体上也能找到根上的 CharacterController / Rigidbody）")]
+    [Tooltip("Teleport the character that owns the collider: the nearest ancestor with a CharacterController / Rigidbody / CharacterDeathHandler.\nNever transform.root -- enemies are usually grouped under a level container, and teleporting that would drag the whole level along")]
     public bool useRootObject = true;
 
-    [Header("防乒乓")]
-    [Tooltip("传送后多久内不再被任何门传送（秒）")]
+    [Header("Anti Ping-Pong")]
+    [Tooltip("After teleporting, time during which no portal can teleport it again (seconds)")]
     public float cooldown = 0.5f;
 
-    [Header("相机")]
-    [Tooltip("传送的是主相机跟随目标时，让相机瞬移。留空自动取 Main Camera 上的 OrbitFollowCamera")]
+    [Header("Camera")]
+    [Tooltip("When the teleported object is the main camera's follow target, snap the camera. If empty, uses the OrbitFollowCamera on Main Camera")]
     public OrbitFollowCamera followCamera;
 
-    [Header("调试")]
+    [Header("Power (activated by electric fields)")]
+    [Tooltip("Checked: the portal starts OFF (wall hidden, no teleport) and works only while an electric field -- the robot's or an Energy Relay's -- touches the wall")]
+    public bool requirePower = true;
+    [Tooltip("How close (world units) a field sphere must come to the wall's collider to count as 'next to' it. 0 = must overlap")]
+    public float powerMargin = 0.5f;
+    [Tooltip("Keep the portal on for this long after the last field leaves (seconds), so it does not flicker at the field edge")]
+    public float powerLinger = 0.3f;
+    [Tooltip("Objects shown only while powered. Empty = the child named 'Energy_wall' (emitters stay visible as a hint)")]
+    public GameObject[] wallVisuals;
+    [Tooltip("The two walls are a pair: a field on either wall powers BOTH ends (default). Off = each end needs its own field")]
+    public bool powerLinkedToo = true;
+    [Tooltip("Teleporting also requires the destination wall to be powered")]
+    public bool requireLinkedPowered = false;
+    [SerializeField] private bool poweredReadout;
+
+    /// True when teleporting is allowed right now (always true when requirePower is off)
+    public bool IsPowered { get; private set; }
+    /// This wall's own field contact (ignores powerLinkedToo), used by the linked portal
+    public bool HasOwnField { get; private set; }
+
+    private Collider triggerCollider;
+    private float lastFieldTime = -999f;
+
+    [Header("Debug")]
     public bool verboseLog = false;
 
-    // 全局冷却表：物体 → 可再次传送的时间。两个门共用，才能防乒乓
+    // Global cooldown table: object -> time it can be teleported again. Shared by both portals so ping-pong is prevented
     private static readonly Dictionary<Transform, float> cooldownUntil = new Dictionary<Transform, float>();
 
     private void Awake()
     {
-        // 触发器保证
+        // Ensure trigger
         var col = GetComponent<Collider>();
         if (col != null && !col.isTrigger)
         {
             col.isTrigger = true;
-            Log("已把碰撞体设为 Trigger");
+            Log("Set collider to Trigger");
         }
         else if (col == null)
         {
-            Debug.LogWarning($"[Portal] {name} 上没有 Collider，传送门不会触发。加一个 BoxCollider 并勾 Is Trigger", this);
+            Debug.LogWarning($"[Portal] {name} has no Collider, the portal will never trigger. Add a BoxCollider and check Is Trigger", this);
         }
 
-        // 自动回填对方
+        // Auto back-fill the other side
         if (linkedPortal != null && linkedPortal.linkedPortal == null)
             linkedPortal.linkedPortal = this;
 
         if (followCamera == null && Camera.main != null)
             followCamera = Camera.main.GetComponent<OrbitFollowCamera>();
+
+        triggerCollider = col;
+        if (wallVisuals == null || wallVisuals.Length == 0)
+        {
+            var wall = transform.Find("Energy_wall");
+            if (wall != null) wallVisuals = new[] { wall.gameObject };
+        }
     }
 
-    private void OnTriggerEnter(Collider other)
+    private void Start()
     {
-        if (linkedPortal == null) { Log("linkedPortal 为空，忽略"); return; }
+        // Apply the initial power state right away (hidden wall when unpowered)
+        UpdatePower(true);
+    }
+
+    private void Update()
+    {
+        UpdatePower(false);
+    }
+
+    // -- Power: electric field contact -> portal on / off, wall visuals shown / hidden --
+    private void UpdatePower(bool force)
+    {
+        bool wasPowered = IsPowered;
+
+        if (!requirePower)
+        {
+            HasOwnField = true;
+            IsPowered = true;
+        }
+        else
+        {
+            var mgr = ElectricFieldManager.Instance;
+            bool touching = mgr != null && (triggerCollider != null
+                ? mgr.IsColliderInAnyField(triggerCollider, powerMargin)
+                : mgr.IsInsideAnyField(transform.position));
+            if (touching) lastFieldTime = Time.time;
+            HasOwnField = touching || Time.time - lastFieldTime <= powerLinger;
+
+            // One field opens both ends when either wall has powerLinkedToo checked
+            bool linkedFeeds = linkedPortal != null
+                               && (powerLinkedToo || linkedPortal.powerLinkedToo)
+                               && linkedPortal.HasOwnField;
+            IsPowered = HasOwnField || linkedFeeds;
+        }
+
+        poweredReadout = IsPowered;
+        if (force || IsPowered != wasPowered)
+        {
+            SetVisuals(IsPowered);
+            if (!force) Log(IsPowered ? "powered ON" : "powered OFF");
+        }
+    }
+
+    private void SetVisuals(bool on)
+    {
+        if (wallVisuals == null) return;
+        foreach (var go in wallVisuals)
+            if (go != null && go.activeSelf != on) go.SetActive(on);
+    }
+
+    // OnTriggerStay (not Enter): a character already standing in the wall when it powers on still gets teleported
+    private void OnTriggerStay(Collider other)
+    {
+        if (linkedPortal == null) { Log("linkedPortal is null, ignoring"); return; }
+        if (!IsPowered) return;
+        if (requireLinkedPowered && !linkedPortal.IsPowered) return;
         if ((affectedLayers.value & (1 << other.gameObject.layer)) == 0) return;
 
-        Transform t = useRootObject ? other.transform.root : other.transform;
+        Transform t = useRootObject ? FindTeleportTarget(other) : other.transform;
+        if (t == null) return;
 
-        // 冷却中（刚从对面传过来）
+        // On cooldown (just came through from the other side)
         if (cooldownUntil.TryGetValue(t, out float until) && Time.time < until) return;
 
-        // 死亡流程中不传送，避免和复活传送打架
+        // Do not teleport during death flow, to avoid fighting with the respawn teleport
         var death = t.GetComponent<CharacterDeathHandler>();
         if (death != null && death.IsDying) return;
 
-        // 角色是从门的哪一侧进来的（forward 那一侧算正面），以及它的前进方向（指向门心）
+        // Which side of the portal the character entered from (forward side = front), and its travel direction (toward the portal center)
         Vector3 toDoor = transform.position - t.position; toDoor.y = 0f;
         bool fromFront = Vector3.Dot(-toDoor, transform.forward) >= 0f;
         linkedPortal.Receive(t, this, fromFront, toDoor.normalized);
     }
 
-    /// <summary>把物体放到本门的出口。由对面的门调用。fromFront：是否从入口门的正面进入；travelDir：进门时的水平前进方向</summary>
+    /// <summary>Place the object at this portal's exit. Called by the other portal. fromFront: entered the source portal from its front; travelDir: horizontal travel direction on entry</summary>
     public void Receive(Transform t, Portal from, bool fromFront, Vector3 travelDir)
     {
         Vector3 pos;
@@ -106,42 +200,42 @@ public class Portal : MonoBehaviour
 
         if (exitPoint != null)
         {
-            // 指定了出口点：位置用它；镜像模式下朝向也按它算
+            // Exit point specified: use it for position; in mirror mode, facing is based on it too
             pos = exitPoint.position;
             if (exitMode == ExitMode.MirrorThroughPortal)
                 rot = FlattenYaw(exitPoint.rotation * Quaternion.Inverse(from.transform.rotation * Quaternion.Euler(0f, 180f, 0f)) * t.rotation);
         }
         else if (exitMode == ExitMode.KeepDirection)
         {
-            // 世界朝向不变；出口选在 B 的"前进方向那一侧"，角色继续往前走就自然离开门
+            // World facing unchanged; exit is on B's "direction of travel" side, so walking on naturally leaves the portal
             float side = Vector3.Dot(travelDir, transform.forward) >= 0f ? 1f : -1f;
             pos = transform.position + transform.forward * (exitOffset * side);
         }
         else
         {
-            // 镜像：从 A 正面进 → 从 B 正面出；从 A 背面进 → 从 B 背面出。
-            // 朝向映射：转 180°（进门方向 = 出门方向的反面），于是朝 -A.forward 走进去 → 朝 +B.forward 走出来
+            // Mirror: enter A front -> exit B front; enter A back -> exit B back.
+            // Facing mapping: rotate 180 degrees (entry direction = opposite of exit direction), so walking in toward -A.forward -> walks out toward +B.forward
             float side = fromFront ? 1f : -1f;
             pos = transform.position + transform.forward * (exitOffset * side);
             Quaternion delta = transform.rotation * Quaternion.Euler(0f, 180f, 0f) * Quaternion.Inverse(from.transform.rotation);
             rot = FlattenYaw(delta * t.rotation);
         }
 
-        // 高度：保持角色相对"门"的高度差不变，两扇门放在不同高度的地面上也不会卡进地里
+        // Height: keep the character's height offset relative to the portal, so portals on floors of different heights do not embed it in the ground
         pos.y = (exitPoint != null ? exitPoint.position.y : transform.position.y)
                 + (t.position.y - from.transform.position.y);
 
         var cc = t.GetComponent<CharacterController>();
 
-        // —— 冷却，先登记再传送（防止落地瞬间被对方门捕获）——
+        // -- Cooldown: register before teleporting (so the other portal cannot catch it on landing) --
         cooldownUntil[t] = Time.time + cooldown;
 
-        // —— 传送（CharacterController 要先关再开）——
+        // -- Teleport (CharacterController must be disabled then re-enabled) --
         var rb = t.GetComponent<Rigidbody>();
         if (cc != null) cc.enabled = false;
         if (rb != null)
         {
-            // 速度方向也跟着门旋转
+            // Velocity direction also rotates with the portal
             Quaternion vDelta = rot * Quaternion.Inverse(t.rotation);
             rb.velocity = vDelta * rb.velocity;
             rb.angularVelocity = Vector3.zero;
@@ -150,14 +244,37 @@ public class Portal : MonoBehaviour
         Physics.SyncTransforms();
         if (cc != null) cc.enabled = true;
 
-        // —— 相机瞬移 ——
-        if (followCamera != null && followCamera.target != null && followCamera.target.IsChildOf(t))
+        // -- Camera snap --
+        // Only when the follow camera is [enabled]: in Operation Mode OrbitFollowCamera is disabled and the camera is fixed at the console view;
+        // calling SetTarget(instant) then would yank the camera onto the character and break the console view.
+        if (followCamera != null && followCamera.isActiveAndEnabled &&
+            followCamera.target != null && followCamera.target.IsChildOf(t))
             followCamera.SetTarget(followCamera.target, instant: true);
+
+        // -- Cancel ongoing right-click pathfinding: position jumped, the old path is meaningless, and following it would walk back through the portal --
+        var nav = t.GetComponent<PlayerConsoleNavigator>();
+        if (nav != null) nav.Stop();
 
         Log($"{t.name}: {from.name} → {name} @ {pos}");
     }
 
-    // 只保留绕 Y 轴的旋转（角色不应该被门歪着放）
+    /// <summary>
+    /// Which transform to teleport for a given collider: the nearest ancestor that is actually a character
+    /// (CharacterController / Rigidbody / CharacterDeathHandler). Returns null for scenery colliders that belong to no character.
+    /// This used to be other.transform.root, which is wrong: enemies (and the player / robot / portals) usually sit under a
+    /// shared level container, so teleporting "the root" moved the entire container -- portals, player and robot included.
+    /// </summary>
+    private static Transform FindTeleportTarget(Collider other)
+    {
+        if (other.attachedRigidbody != null) return other.attachedRigidbody.transform;
+        var cc = other.GetComponentInParent<CharacterController>();
+        if (cc != null) return cc.transform;
+        var death = other.GetComponentInParent<CharacterDeathHandler>();
+        if (death != null) return death.transform;
+        return null;
+    }
+
+    // Keep only rotation around Y (characters should not be tilted by the portal)
     private static Quaternion FlattenYaw(Quaternion q)
     {
         Vector3 fwd = q * Vector3.forward;
@@ -173,6 +290,12 @@ public class Portal : MonoBehaviour
 
     private void OnDrawGizmos()
     {
+        if (requirePower)
+        {
+            // Power state: green = on, grey = off
+            Gizmos.color = Application.isPlaying && IsPowered ? new Color(0.3f, 1f, 0.4f, 0.9f) : new Color(0.5f, 0.5f, 0.5f, 0.6f);
+            Gizmos.DrawWireSphere(transform.position + Vector3.up * 1.5f, 0.2f);
+        }
         Gizmos.color = new Color(0.3f, 0.9f, 1f, 0.9f);
         Vector3 exit = exitPoint != null ? exitPoint.position : transform.position + transform.forward * exitOffset;
         Gizmos.DrawWireSphere(exit, 0.3f);

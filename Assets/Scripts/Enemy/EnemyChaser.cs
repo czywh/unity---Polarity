@@ -2,9 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 敌人追踪 AI：在 GridSystem 的可走格子上用 A* 追踪目标。
-/// 目标可多选（Player / Robot），每次挑【最近且其所在格可走 / 可达】的目标追。
-/// 沿格子路径逐格移动。桥 / 目标移动时定期重算。
+/// Enemy chase AI: uses A* over GridSystem's walkable grid cells to chase a target.
+/// Multiple targets allowed (Player / Robot); each time it picks the [nearest target whose cell is walkable / reachable].
+/// Moves cell by cell along the path. Recomputes periodically when bridges / targets move.
 /// </summary>
 [RequireComponent(typeof(CharacterController))]
 public class EnemyChaser : MonoBehaviour
@@ -12,87 +12,87 @@ public class EnemyChaser : MonoBehaviour
     [System.Flags]
     public enum TargetMask { None = 0, Player = 1, Robot = 2 }
 
-    [Header("电量（移动耗电 · 没电停追 · 领域内充电）")]
-    [Tooltip("敌人的电量组件（留空取同物体的 EnergySystem）")]
+[Header("Energy (moving drains energy; no energy = stop chasing; recharges inside electric field)")]
+[Tooltip("Enemy's energy component (empty = use EnergySystem on the same object)")]
     public EnergySystem energy;
-    [Tooltip("移动时每秒耗电")]
+[Tooltip("Energy drained per second while moving")]
     public float drainPerSecond = 8f;
-    [Tooltip("在电子领域内时每秒充电（Robot 开 E 罩住敌人 → 充电）")]
+[Tooltip("Energy recharged per second while inside an electric field (Robot's E field covering the enemy -> recharge)")]
     public float rechargePerSecond = 20f;
-    [Tooltip("是否允许在电子领域内充电")]
+[Tooltip("Whether recharging inside an electric field is allowed")]
     public bool rechargeInField = true;
 
-    [Header("追踪目标（可多选）")]
+[Header("Chase Targets (multiple allowed)")]
     public TargetMask targets = TargetMask.Player | TargetMask.Robot;
-    [Tooltip("玩家 Transform（追 Player 时用）")]
+[Tooltip("Player Transform (used when chasing Player)")]
     public Transform player;
-    [Tooltip("机器人 Transform（追 Robot 时用）")]
+[Tooltip("Robot Transform (used when chasing Robot)")]
     public Transform robot;
 
-    [Header("巡逻（依次走各巡逻点，可添加）")]
-    [Tooltip("巡逻点（按顺序循环）。留空 = 不巡逻，回起点待命")]
+[Header("Patrol (visits each patrol point in order; add as many as needed)")]
+[Tooltip("Patrol points (looped in order). Empty = no patrol, stand by at start point")]
     public Transform[] patrolPoints;
-    [Tooltip("到达每个巡逻点后等待多久（秒）")]
+[Tooltip("How long to wait at each patrol point (seconds)")]
     public float patrolWait = 5f;
-    [Tooltip("到达巡逻点的距离阈值")]
+[Tooltip("Distance threshold for reaching a patrol point")]
     public float patrolArriveDistance = 1.5f;
 
-    [Header("备用等待点（起点不可达时退到最近的可达备用点）")]
-    [Tooltip("起点被电子桥落下等原因阻断、无法抵达时，敌人退到这些点里【最近的可达点】等待")]
+[Header("Fallback Wait Points (retreat to the nearest reachable one when start point is unreachable)")]
+[Tooltip("When the start point is blocked (e.g. an electric bridge dropped) and can't be reached, the enemy retreats to the [nearest reachable point] among these and waits")]
     public Transform[] fallbackWaitPoints;
 
-    [Header("站定朝向（面向周围可走格最多的方向）")]
-    [Tooltip("待命时朝向周围可走格最密的方向；关掉则保持起始/当前朝向")]
+[Header("Idle Facing (face the direction with the most walkable cells)")]
+[Tooltip("When idle, face the direction with the densest walkable cells; off = keep start/current facing")]
     public bool faceOpenDirection = true;
-    [Tooltip("扫描范围（格）：以自身为中心的边长。5 = 5×5")]
+[Tooltip("Scan range (cells): side length centered on self. 5 = 5x5")]
     public int facingScanCells = 5;
-    [Tooltip("扫描可视化：Scene + Game 视图画出扫描范围与朝向")]
+[Tooltip("Scan visualization: draw scan range and facing in Scene + Game view")]
     public bool drawFacingScan = false;
     public Color scanColor = new Color(0.3f, 1f, 0.5f, 0.9f);
 
-    [Header("追击检测（面朝方向的扇形，范围内出现目标即追）")]
-    [Tooltip("扇形半径（世界单位）")]
+[Header("Chase Detection (sector in facing direction; chase any target that enters it)")]
+[Tooltip("Sector radius (world units)")]
     public float viewRadius = 8f;
-    [Tooltip("扇形总张角（度）")]
+[Tooltip("Total sector angle (degrees)")]
     [Range(0f, 360f)] public float viewAngle = 90f;
-    [Tooltip("视线遮挡层：设了就检测目标是否被墙挡住（留空=不检测遮挡）")]
+[Tooltip("Line-of-sight occlusion layers: if set, checks whether the target is blocked by walls (empty = no occlusion check)")]
     public LayerMask viewObstacles;
 
-    [Header("扇形可视化（Scene + Game 视图可见）")]
+[Header("Sector Visualization (visible in Scene + Game view)")]
     public bool drawViewFan = true;
     public Color fanColor = new Color(1f, 0.35f, 0.2f, 0.22f);
 
-    [Header("寻路")]
-    [Tooltip("网格；留空取 GridSystem.Instance")]
+[Header("Pathfinding")]
+[Tooltip("Grid; empty = use GridSystem.Instance")]
     public GridSystem grid;
     public bool allowDiagonal = true;
-    [Tooltip("每隔多少秒重算一次路径")]
+[Tooltip("Interval in seconds between path recalculations")]
     public float repathInterval = 0.4f;
 
-    [Header("移动")]
+[Header("Movement")]
     public float moveSpeed = 3.5f;
     public float turnSpeed = 720f;
-    [Tooltip("被外部效果（激光等）减速时，速度倍率的下限。0.33 = 最慢只能降到原速 1/3")]
+[Tooltip("Lower bound of speed multiplier when slowed by external effects (lasers etc.). 0.33 = can slow to at most 1/3 of base speed")]
     public float minSpeedMultiplier = 0.1f;
-    [Tooltip("到达一个路径点的距离阈值")]
+[Tooltip("Distance threshold for reaching a path point")]
     public float arriveThreshold = 0.15f;
     public float gravity = -25f;
 
-    [Header("攻击（追上目标 → 延迟触发目标死亡，然后返回起点/待命）")]
-    [Tooltip("追到目标身边后触发目标死亡")]
+[Header("Attack (catch target -> delayed target death, then return to start/stand by)")]
+[Tooltip("Kill the target after catching up to it")]
     public bool killOnReach = true;
-    [Tooltip("离目标多近算追上")]
+[Tooltip("How close to the target counts as caught")]
     public float killDistance = 1.2f;
-    [Tooltip("追到后持续贴近多久触发目标死亡（预警窗口，期间逃出则取消）")]
+[Tooltip("How long to stay close after catching before the target dies (warning window; escaping cancels it)")]
     public float killDelay = 0.5f;
-    [Tooltip("回到起点这么近算\"到家\"")]
+[Tooltip("This close to the start point counts as \"home\"")]
     public float homeArriveDistance = 0.6f;
-    [Tooltip("追到目标致死后，原地等待多久再开始返回起点")]
+[Tooltip("After killing the target, how long to wait in place before returning to start")]
     public float postKillPause = 0.5f;
 
-    [Header("调试")]
+[Header("Debug")]
     public bool drawPath = true;
-    [SerializeField] private string currentTargetName = "(无)";
+[SerializeField] private string currentTargetName = "(none)";
 
     private CharacterController controller;
     private EnemyDeath selfDeath;
@@ -102,32 +102,32 @@ public class EnemyChaser : MonoBehaviour
     private int pathIndex;
     private float nextRepath;
     private Transform currentTarget;
-    private float reachTimer;         // 持续贴近计时（0→killDelay）
-    private Vector3 homePosition;     // 起始点
-    private Quaternion homeRotation;  // 起始朝向（回家后恢复）
-    private float pauseTimer;         // 致死后原地停顿计时
+private float reachTimer;         // Stay-close timer (0 -> killDelay)
+private Vector3 homePosition;     // Start point
+private Quaternion homeRotation;  // Start facing (restored after returning home)
+private float pauseTimer;         // Post-kill pause timer
 
-    // 追击状态机
+// Chase state machine
     public enum ChaseState { Idle, Patrolling, PatrolWaiting, Chasing, Waiting, Returning }
-    [Header("调试（运行时只读）")]
+[Header("Debug (runtime, read-only)")]
     [SerializeField] private ChaseState state = ChaseState.Idle;
-    [Tooltip("当前移动速度倍率：1 = 正常，被激光照射时降到 1/3")]
+[Tooltip("Current movement speed multiplier: 1 = normal, drops to 1/3 while hit by a laser")]
     [SerializeField] private float speedMultiplierReadout = 1f;
     public ChaseState State => state;
-    private Transform lockedTarget;   // 锁定目标（进入扇形后锁定，死追到底）
-    private int patrolIndex;          // 当前巡逻目标点索引
-    private float patrolTimer;        // 巡逻点等待计时
-    private Vector3 returnGoal;       // 当前返回目标（起点或备用点）
-    private bool returnIsHome = true; // 返回目标是不是起点
-    private bool hasPower = true;     // 当前是否有电（无电则不追、不动）
+private Transform lockedTarget;   // Locked target (locked on entering sector, chased to the end)
+private int patrolIndex;          // Current patrol point index
+private float patrolTimer;        // Patrol point wait timer
+private Vector3 returnGoal;       // Current return goal (start point or fallback point)
+private bool returnIsHome = true; // Whether the return goal is the start point
+private bool hasPower = true;     // Whether currently powered (no power = no chasing, no moving)
 
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
         selfDeath = GetComponent<EnemyDeath>();
         if (energy == null) energy = GetComponent<EnergySystem>();
-        homePosition = transform.position;   // 记录起始点
-        homeRotation = transform.rotation;   // 记录起始朝向
+homePosition = transform.position;   // Record start point
+homeRotation = transform.rotation;   // Record start facing
     }
 
     private void Start()
@@ -140,7 +140,7 @@ public class EnemyChaser : MonoBehaviour
         if (grid == null) grid = GridSystem.Instance;
         if (grid == null) return;
 
-        // 领域内充电（Robot 开 E 领域罩住敌人 → 充电）
+// Recharge inside electric field (Robot's E field covering the enemy -> recharge)
         if (energy != null && rechargeInField && InAnyField())
             energy.Recharge(rechargePerSecond * Time.deltaTime);
 
@@ -156,7 +156,7 @@ public class EnemyChaser : MonoBehaviour
 
         FollowPath();
 
-        // 锁定目标追到身边持续 killDelay → 目标死亡 → 收尾（需有电）
+// Locked target stays close for killDelay -> target dies -> wrap up (requires power)
         if (hasPower && state == ChaseState.Chasing && killOnReach && currentTarget != null)
         {
             float d = Vector3.Distance(transform.position, currentTarget.position);
@@ -167,7 +167,7 @@ public class EnemyChaser : MonoBehaviour
                 {
                     KillTarget(currentTarget);
                     reachTimer = 0f;
-                    EnterWaiting();   // 致死后原地停顿，再收尾
+EnterWaiting();   // Pause in place after kill, then wrap up
                 }
             }
             else reachTimer = 0f;
@@ -175,7 +175,7 @@ public class EnemyChaser : MonoBehaviour
         else reachTimer = 0f;
     }
 
-    // 敌人是否在任意电子领域内（用碰撞体精确判定）
+// Whether the enemy is inside any electric field (precise check via colliders)
     private bool InAnyField()
     {
         var mgr = ElectricFieldManager.Instance;
@@ -184,7 +184,7 @@ public class EnemyChaser : MonoBehaviour
                                    : mgr.IsInsideAnyField(transform.position);
     }
 
-    // 状态推进：Idle 靠扇形发现→锁定；Chasing 死追；Waiting 致死后停顿；Returning 回起点→Idle
+// State progression: Idle finds via sector -> lock; Chasing chases relentlessly; Waiting pauses after kill; Returning goes back to start -> Idle
     private void UpdateState()
     {
         switch (state)
@@ -196,7 +196,7 @@ public class EnemyChaser : MonoBehaviour
 
             case ChaseState.Patrolling:
                 if (DetectAndLock()) break;
-                // 到达当前巡逻点 → 等待
+// Reached current patrol point -> wait
                 Transform pt = CurrentPatrolPoint();
                 if (pt != null && Flat(transform.position, pt.position) <= patrolArriveDistance)
                     EnterPatrolWait();
@@ -207,7 +207,7 @@ public class EnemyChaser : MonoBehaviour
                 patrolTimer -= Time.deltaTime;
                 if (patrolTimer <= 0f)
                 {
-                    // 前往下一个巡逻点（不可达的会在 Repath 里自动跳过）
+// Head to the next patrol point (unreachable ones are skipped automatically in Repath)
                     patrolIndex = (patrolIndex + 1) % Mathf.Max(1, patrolPoints.Length);
                     state = ChaseState.Patrolling;
                     nextRepath = 0f;
@@ -215,14 +215,14 @@ public class EnemyChaser : MonoBehaviour
                 break;
 
             case ChaseState.Chasing:
-                // 锁定后不管扇形，死追到底。目标丢失（销毁/死亡中）→ 停顿后收尾。
-                // 其余停止方式请调 StopChasing()。
+// Once locked, ignore the sector and chase to the end. Target lost (destroyed/dying) -> pause then wrap up.
+// For other ways to stop, call StopChasing().
                 if (lockedTarget == null || IsDying(lockedTarget))
                     EnterWaiting();
                 break;
 
             case ChaseState.Waiting:
-                // 致死 / 丢失后原地停顿 postKillPause 秒，再收尾（回巡逻或回起点）
+// After kill / loss, pause in place for postKillPause seconds, then wrap up (back to patrol or start)
                 pauseTimer -= Time.deltaTime;
                 if (pauseTimer <= 0f) AfterWaiting();
                 break;
@@ -231,21 +231,21 @@ public class EnemyChaser : MonoBehaviour
                 if (DetectAndLock()) break;
                 if (Flat(transform.position, returnGoal) <= homeArriveDistance)
                 {
-                    // 到达返回目标：停止移动，再转向
+// Reached return goal: stop moving, then turn
                     path = null;
                     bool aligned = returnIsHome
-                        ? RotateToHomeRotation()          // 回到起点 → 转回游戏开始朝向
-                        : RotateToOpenDirection();         // 停在备用点 → 朝可走格最多的方向
+? RotateToHomeRotation()          // Back at start -> turn back to the game-start facing
+: RotateToOpenDirection();         // At a fallback point -> face the direction with the most walkable cells
                     if (aligned) state = ChaseState.Idle;
                 }
                 break;
         }
     }
 
-    // 扇形发现目标即锁定并转 Chasing；返回是否发现
+// Lock on and switch to Chasing when the sector spots a target; returns whether one was found
     private bool DetectAndLock()
     {
-        if (!hasPower) return false;   // 没电不追
+if (!hasPower) return false;   // No power, no chasing
         Transform t = DetectInFan();
         if (t == null) return false;
         lockedTarget = t;
@@ -265,14 +265,14 @@ public class EnemyChaser : MonoBehaviour
         path = null;
     }
 
-    // 停顿结束后的收尾：有巡逻点 → 回巡逻；否则 → 返回起点
+// Wrap-up after pause: has patrol points -> back to patrol; otherwise -> return to start
     private void AfterWaiting()
     {
         if (HasPatrol()) { state = ChaseState.Patrolling; nextRepath = 0f; }
         else BeginReturning();
     }
 
-    // 平滑转回起始朝向，转到位返回 true
+// Smoothly turn back to start facing; returns true once aligned
     private bool RotateToHomeRotation()
     {
         transform.rotation = Quaternion.RotateTowards(transform.rotation, homeRotation, turnSpeed * Time.deltaTime);
@@ -288,7 +288,7 @@ public class EnemyChaser : MonoBehaviour
         nextRepath = 0f;
     }
 
-    // 致死 / 丢失目标后进入原地停顿
+// Enter in-place pause after kill / losing target
     private void EnterWaiting()
     {
         lockedTarget = null;
@@ -299,32 +299,32 @@ public class EnemyChaser : MonoBehaviour
         path = null;
     }
 
-    /// <summary>外部统一"停止追击"入口。以后任何机制（超时 / 被击晕 / 目标进安全区…）都调它 → 放弃当前目标，回巡逻/起点。</summary>
-    // ───────────────────── 外部减速（激光等） ─────────────────────
+/// <summary>Unified external "stop chasing" entry point. Any future mechanic (timeout / stunned / target enters safe zone...) should call this -> drop current target, return to patrol/start.</summary>
+// --------------------- External slowdown (lasers etc.) ---------------------
 
     private float slowMultiplier = 1f;
     private float slowUntil = -1f;
 
-    /// <summary>当前移动速度倍率：1 = 正常，减速生效时 &lt; 1。到期自动恢复。</summary>
+/// <summary>Current movement speed multiplier: 1 = normal, &lt; 1 while slowed. Restores automatically on expiry.</summary>
     public float CurrentSpeedMultiplier => Time.time <= slowUntil ? slowMultiplier : 1f;
 
     /// <summary>
-    /// 施加减速。需要【持续调用】来维持效果：duration 是"离开效果源后还持续多久"，
-    /// 而不是一次性的总时长。激光每个 FixedUpdate 调一次，敌人一离开光束就自然恢复。
+/// Applies a slowdown. Must be [called continuously] to sustain it: duration is "how long it lasts after leaving the source",
+/// not a one-off total duration. The laser calls this every FixedUpdate, so the enemy recovers naturally once out of the beam.
     ///
-    /// 多个来源同时减速时取最强的那个（倍率最小），不叠乘 —— 否则三条激光会让敌人几乎静止。
+/// With multiple simultaneous sources, the strongest (smallest multiplier) wins, no multiplicative stacking -- otherwise three lasers would nearly freeze the enemy.
     /// </summary>
     public void ApplySlow(float multiplier, float duration)
     {
         multiplier = Mathf.Clamp(multiplier, minSpeedMultiplier, 1f);
 
-        if (Time.time > slowUntil) slowMultiplier = multiplier;              // 上一次已过期，重新开始
-        else slowMultiplier = Mathf.Min(slowMultiplier, multiplier);         // 仍在减速中，取更强的
+if (Time.time > slowUntil) slowMultiplier = multiplier;              // Previous one expired, start fresh
+else slowMultiplier = Mathf.Min(slowMultiplier, multiplier);         // Still slowed, take the stronger one
 
         slowUntil = Mathf.Max(slowUntil, Time.time + duration);
     }
 
-    /// <summary>立即解除减速（复活、传送等场合用）</summary>
+/// <summary>Immediately clear the slowdown (for respawn, teleport, etc.)</summary>
     public void ClearSlow()
     {
         slowMultiplier = 1f;
@@ -342,31 +342,31 @@ public class EnemyChaser : MonoBehaviour
         return dh != null && dh.IsDying;
     }
 
-    // 抓到目标致死；若目标是 Robot，敌人补充等于 Robot 当前电量的电
+// Caught target dies; if the target is Robot, the enemy gains energy equal to Robot's current energy
     private void KillTarget(Transform target)
     {
         var dh = target.GetComponentInParent<CharacterDeathHandler>();
         if (dh != null && !dh.IsDying) dh.Die();
 
-        // 目标身份：Robot → 补电；Player → 暂不处理（预留扩展：以后可加"抓到 Player 游戏结束"）
+// Target identity: Robot -> recharge; Player -> not handled yet (reserved for extension: could add "catching Player = game over")
         var id = target.GetComponentInParent<CharacterId>();
         if (id != null && id.characterType == CharacterType.Robot)
         {
             var robotEnergy = target.GetComponentInParent<EnergySystem>();
             if (robotEnergy != null && energy != null)
-                energy.Recharge(robotEnergy.CurrentEnergy);   // 敌人电量 += Robot 当前电量
+energy.Recharge(robotEnergy.CurrentEnergy);   // Enemy energy += Robot's current energy
         }
         else if (id != null && id.characterType == CharacterType.Player)
         {
-            // TODO: 之后可在此加"抓到 Player"的判定（如游戏结束）。目前不做。
+// TODO: Could add a "caught Player" check here later (e.g. game over). Not done for now.
             OnCaughtPlayer(target);
         }
     }
 
-    /// 抓到 Player 时的扩展点（目前留空）。以后接游戏结束等判定。
+/// Extension point for catching Player (currently empty). Hook up game over etc. later.
     private void OnCaughtPlayer(Transform player) { }
 
-    // 按状态求路径
+// Compute path by state
     private void Repath()
     {
         Vector2Int startCell = grid.WorldToCell(transform.position);
@@ -388,11 +388,11 @@ public class EnemyChaser : MonoBehaviour
 
             case ChaseState.Patrolling:
                 currentTarget = null;
-                // 从当前巡逻点起依次找一个"可达"的点前往；下一个被玩家改动断了就跳到再下一个
-                if (!TryPathToPatrol(startCell)) EnterPatrolWait();   // 都走不通 → 原地等，下轮再试
+// Starting from the current patrol point, find the next "reachable" one; if the player's changes cut it off, skip to the one after
+if (!TryPathToPatrol(startCell)) EnterPatrolWait();   // None reachable -> wait in place, retry next round
                 break;
 
-            default:   // Idle / PatrolWaiting / Waiting → 不移动
+default:   // Idle / PatrolWaiting / Waiting -> don't move
                 path = null;
                 break;
         }
@@ -407,37 +407,37 @@ public class EnemyChaser : MonoBehaviour
         pathIndex = 0;
     }
 
-    // 返回路径决策：① 起点优先；② 起点不可达 → 最近可达备用点；③ 都不可达 → 就地
+// Return path decision: (1) start point first; (2) start unreachable -> nearest reachable fallback point; (3) none reachable -> stay put
     private void ResolveReturnPath(Vector2Int startCell)
     {
-        // ① 已在起点范围内 → 到家
+// (1) Already within start point range -> home
         if (Flat(transform.position, homePosition) <= homeArriveDistance)
         {
             returnGoal = homePosition; returnIsHome = true;
-            currentTargetName = "(到起点)"; path = null; return;
+currentTargetName = "(at start)"; path = null; return;
         }
 
-        // ① 起点可达 → 回起点
+// (1) Start point reachable -> go back to start
         List<Vector2Int> homePath = TryPath(startCell, homePosition);
         if (homePath != null)
         {
             returnGoal = homePosition; returnIsHome = true;
-            currentTargetName = "(返回起点)"; path = homePath; pathIndex = 0; return;
+currentTargetName = "(returning to start)"; path = homePath; pathIndex = 0; return;
         }
 
-        // ② 起点不可达 → 最近可达备用点
+// (2) Start unreachable -> nearest reachable fallback point
         if (TryNearestFallback(startCell))
         {
             returnIsHome = false;
-            currentTargetName = "(退到备用点)"; return;
+currentTargetName = "(retreating to fallback)"; return;
         }
 
-        // ③ 都不可达 → 就地等待，朝可走格最多方向
+// (3) None reachable -> wait in place, facing the direction with the most walkable cells
         returnGoal = transform.position; returnIsHome = false;
-        currentTargetName = "(无路可退)"; path = null;
+currentTargetName = "(no retreat path)"; path = null;
     }
 
-    // 求到某世界点的格子路径（不可达返回 null）
+// Grid path to a world point (returns null if unreachable)
     private List<Vector2Int> TryPath(Vector2Int startCell, Vector3 worldGoal)
     {
         Vector2Int goal = grid.WorldToCell(worldGoal);
@@ -446,7 +446,7 @@ public class EnemyChaser : MonoBehaviour
         return AStarPathfinder.FindPath(grid, startCell, goal, allowDiagonal);
     }
 
-    // 选最近的可达备用点，设 returnGoal / path；找到返回 true
+// Pick the nearest reachable fallback point, set returnGoal / path; returns true if found
     private bool TryNearestFallback(Vector2Int startCell)
     {
         if (fallbackWaitPoints == null || fallbackWaitPoints.Length == 0) return false;
@@ -462,9 +462,9 @@ public class EnemyChaser : MonoBehaviour
             if (fp == null) continue;
 
             float d = Flat(transform.position, fp.position);
-            if (d >= bestD) continue;   // 只保留更近的
+if (d >= bestD) continue;   // Keep only closer ones
 
-            // 已在该备用点范围内 → 直接选它（无需路径）
+// Already within this fallback point's range -> pick it directly (no path needed)
             if (d <= homeArriveDistance)
             {
                 bestD = d; bestPath = null; bestPos = fp.position; found = true; continue;
@@ -477,26 +477,26 @@ public class EnemyChaser : MonoBehaviour
         if (found)
         {
             returnGoal = bestPos;
-            path = bestPath;      // 已在点上时为 null（到达）
+path = bestPath;      // null when already on the point (arrived)
             pathIndex = 0;
         }
         return found;
     }
 
-    // 平滑转向"周围可走格最多"的方向，转到位返回 true
+// Smoothly turn toward the direction with "the most walkable cells around"; returns true once aligned
     private bool RotateToOpenDirection()
     {
         if (!faceOpenDirection) return true;
 
         Vector3 dir = ComputeOpenDirection();
-        if (dir.sqrMagnitude < 1e-4f) return true;   // 周围没有明显通路方向 → 直接完成
+if (dir.sqrMagnitude < 1e-4f) return true;   // No clear open direction around -> done
 
         Quaternion target = Quaternion.LookRotation(dir, Vector3.up);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, target, turnSpeed * Time.deltaTime);
         return Quaternion.Angle(transform.rotation, target) <= 0.5f;
     }
 
-    // 扫描周围 facingScanCells×facingScanCells 的可走格，返回"可走格最密"的方向
+// Scan walkable cells in the surrounding facingScanCells x facingScanCells area; return the "densest walkable" direction
     private Vector3 ComputeOpenDirection()
     {
         if (grid == null) return Vector3.zero;
@@ -513,14 +513,14 @@ public class EnemyChaser : MonoBehaviour
                 if (!grid.IsWalkable(n)) continue;
                 Vector3 w = grid.CellToWorld(n) - self; w.y = 0f;
                 if (w.sqrMagnitude < 1e-4f) continue;
-                sum += w.normalized;   // 每个可走格贡献一个单位方向 → 合向量指向通路最密处
+sum += w.normalized;   // Each walkable cell contributes a unit direction -> the sum points toward the densest open area
             }
 
         sum.y = 0f;
         return sum.sqrMagnitude < 1e-4f ? Vector3.zero : sum.normalized;
     }
 
-    // 从 patrolIndex 起依次尝试各巡逻点，落到第一个可达的（跳过被断路的）；全不可达返回 false
+// Try patrol points in order from patrolIndex, settle on the first reachable one (skipping cut-off ones); returns false if none reachable
     private bool TryPathToPatrol(Vector2Int startCell)
     {
         if (!HasPatrol() || startCell.x < 0) return false;
@@ -538,13 +538,13 @@ public class EnemyChaser : MonoBehaviour
             var p = AStarPathfinder.FindPath(grid, startCell, goal, allowDiagonal);
             if (p != null)
             {
-                patrolIndex = idx;               // 跳到这个可达点
+patrolIndex = idx;               // Jump to this reachable point
                 path = p; pathIndex = 0;
-                currentTargetName = $"(巡逻→{pt.name})";
+currentTargetName = $"(patrol->{pt.name})";
                 return true;
             }
         }
-        return false;   // 全走不通
+return false;   // None reachable
     }
 
     private static float Flat(Vector3 a, Vector3 b)
@@ -553,7 +553,7 @@ public class EnemyChaser : MonoBehaviour
         return Vector3.Distance(a, b);
     }
 
-    // 扇形发现目标（仅用于非追击状态的"发现"，不用于持续追击判定）
+// Sector detection of targets (only for "spotting" in non-chase states, not for continuous chase checks)
     private Transform DetectInFan()
     {
         Transform best = null;
@@ -569,13 +569,13 @@ public class EnemyChaser : MonoBehaviour
         if (!InViewFan(t.position)) return;
 
         Vector2Int tCell = grid.WorldToCell(t.position);
-        if (!grid.IsWalkable(tCell) && NearestWalkable(tCell).x < 0) return;   // 目标要能到达
+if (!grid.IsWalkable(tCell) && NearestWalkable(tCell).x < 0) return;   // Target must be reachable
 
         float d = (t.position - transform.position).sqrMagnitude;
         if (d < bestD) { bestD = d; best = t; }
     }
 
-    /// 某世界点是否落在敌人面朝的扇形内（半径 + 张角 + 可选视线遮挡）
+/// Whether a world point lies within the enemy's facing sector (radius + angle + optional line-of-sight occlusion)
     public bool InViewFan(Vector3 worldPos)
     {
         Vector3 to = worldPos - transform.position;
@@ -586,7 +586,7 @@ public class EnemyChaser : MonoBehaviour
         Vector3 fwd = transform.forward; fwd.y = 0f;
         if (Vector3.Angle(fwd, to) > viewAngle * 0.5f) return false;
 
-        // 视线遮挡（可选）
+// Line-of-sight occlusion (optional)
         if (viewObstacles.value != 0 &&
             Physics.Raycast(transform.position, to.normalized, dist - 0.1f, viewObstacles, QueryTriggerInteraction.Ignore))
             return false;
@@ -594,13 +594,13 @@ public class EnemyChaser : MonoBehaviour
         return true;
     }
 
-    // 沿路径逐格移动
+// Move cell by cell along the path
     private void FollowPath()
     {
         Vector3 move = Vector3.zero;
         speedMultiplierReadout = CurrentSpeedMultiplier;
 
-        // 有电才移动；移动时耗电
+// Only move when powered; moving drains energy
         if (hasPower && path != null && pathIndex < path.Count)
         {
             Vector3 targetPos = grid.CellToWorld(path[pathIndex]);
@@ -608,7 +608,7 @@ public class EnemyChaser : MonoBehaviour
 
             if (Vector3.Distance(flatPos, targetPos) <= arriveThreshold)
             {
-                pathIndex++;   // 到点，下一格
+pathIndex++;   // Reached point, next cell
             }
             else
             {
@@ -619,12 +619,12 @@ public class EnemyChaser : MonoBehaviour
                     move = dir * moveSpeed * CurrentSpeedMultiplier;
                     FaceDir(dir);
                     if (energy != null && state == ChaseState.Chasing)
-                        energy.Drain(drainPerSecond * Time.deltaTime);   // 仅追逐耗电（巡逻/返回不耗）
+energy.Drain(drainPerSecond * Time.deltaTime);   // Only chasing drains energy (patrol/return don't)
                 }
             }
         }
 
-        // 重力
+// Gravity
         if (controller.isGrounded && verticalVelocity < 0f) verticalVelocity = -2f;
         verticalVelocity += gravity * Time.deltaTime;
 
@@ -638,16 +638,16 @@ public class EnemyChaser : MonoBehaviour
         transform.rotation = Quaternion.RotateTowards(transform.rotation, target, turnSpeed * Time.deltaTime);
     }
 
-    // 在小范围内找最近的可走格（目标/自己站在格外时兜底）；找不到返回 (-1,-1)
+// Find the nearest walkable cell within a small range (fallback when target/self stands off-grid); returns (-1,-1) if none
     private Vector2Int NearestWalkable(Vector2Int c)
     {
         if (grid.IsWalkable(c)) return c;
-        for (int r = 1; r <= 3; r++)   // 向外扩 3 格找
+for (int r = 1; r <= 3; r++)   // Expand outward up to 3 cells
         {
             for (int dx = -r; dx <= r; dx++)
                 for (int dy = -r; dy <= r; dy++)
                 {
-                    if (Mathf.Abs(dx) != r && Mathf.Abs(dy) != r) continue; // 只查环
+if (Mathf.Abs(dx) != r && Mathf.Abs(dy) != r) continue; // Check ring only
                     Vector2Int n = new Vector2Int(c.x + dx, c.y + dy);
                     if (grid.IsWalkable(n)) return n;
                 }
@@ -657,7 +657,7 @@ public class EnemyChaser : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        // 路径
+// Path
         if (drawPath && grid != null && path != null)
         {
             Gizmos.color = Color.magenta;
@@ -671,10 +671,10 @@ public class EnemyChaser : MonoBehaviour
             }
         }
 
-        // 扇形（Scene 视图）
+// Sector (Scene view)
         if (drawViewFan) DrawFanGizmo();
 
-        // 巡逻点 + 连线
+// Patrol points + connecting lines
         if (patrolPoints != null && patrolPoints.Length > 0)
         {
             Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.9f);
@@ -688,7 +688,7 @@ public class EnemyChaser : MonoBehaviour
             }
         }
 
-        // 备用等待点
+// Fallback wait points
         if (fallbackWaitPoints != null)
         {
             Gizmos.color = new Color(1f, 0.7f, 0.2f, 0.9f);
@@ -696,7 +696,7 @@ public class EnemyChaser : MonoBehaviour
                 if (fp != null) { Gizmos.DrawWireSphere(fp.position, 0.45f); Gizmos.DrawLine(transform.position, fp.position); }
         }
 
-        // 站定朝向扫描范围 + 计算出的开阔方向
+// Idle facing scan range + computed open direction
         if (drawFacingScan && grid != null)
         {
             int half = Mathf.Max(1, facingScanCells / 2);
@@ -739,7 +739,7 @@ public class EnemyChaser : MonoBehaviour
         }
     }
 
-    // —— Game 视图运行时画扇形（GL 填充）——
+// -- Draw sector at runtime in Game view (GL fill) --
     private void EnsureFanMat()
     {
         if (fanMat != null) return;

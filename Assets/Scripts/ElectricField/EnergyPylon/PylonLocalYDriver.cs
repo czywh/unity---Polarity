@@ -1,36 +1,36 @@
 using UnityEngine;
 
 /// <summary>
-/// PROP　把某个 ElectricEntity（通常是吸电桩 EnergyPylon）的电量百分比，
-/// 映射到目标 Transform 的【局部 Y 坐标】：
-///   电量 0   → 目标 localPosition.y = yAtEmpty
-///   电量 满  → 目标 localPosition.y = yAtFull
-///   中间     → 按 Fraction 线性插值
+/// PROP  Maps the energy percentage of an ElectricEntity (usually an EnergyPylon)
+/// to the target Transform's [local Y position]:
+///   Energy 0    -> target localPosition.y = yAtEmpty
+///   Energy full -> target localPosition.y = yAtFull
+///   In between  -> linear interpolation by Fraction
 ///
-/// 适合"吸电桩电量驱动子物体（如 Disruptor）沿 Y 轴升降"的表现。
-/// X / Z 保持目标原有的局部坐标不变。
+/// Suited for effects like "pylon energy drives a child (e.g. Disruptor) up/down along Y".
+/// X / Z keep the target's original local coordinates.
 /// </summary>
 [DisallowMultipleComponent]
 public class PylonLocalYDriver : MonoBehaviour
 {
-    [Header("电量源（留空取本物体或父级的 ElectricEntity）")]
+    [Header("Energy Source (empty = ElectricEntity on this object or a parent)")]
     [SerializeField] private ElectricEntity energySource;
 
-    [Header("被驱动的目标（留空取本物体）")]
-    [Tooltip("要升降的子物体，如 Disruptor")]
+    [Header("Driven Target (empty = this object)")]
+    [Tooltip("Child object to raise/lower, e.g. Disruptor")]
     [SerializeField] private Transform target;
 
-    [Header("局部 Y 端点")]
-    [Tooltip("电量为 0 时的局部 Y")]
+    [Header("Local Y Endpoints")]
+    [Tooltip("Local Y when energy is 0")]
     public float yAtEmpty = -1.5f;
-    [Tooltip("电量充满时的局部 Y")]
+    [Tooltip("Local Y when energy is full")]
     public float yAtFull = 0.4f;
 
-    [Header("平滑（可选）")]
-    [Tooltip("每秒最大移动速度；0 = 直接对齐（电量本已渐变，一般用 0）")]
+    [Header("Smoothing (optional)")]
+    [Tooltip("Max movement speed per second; 0 = snap directly (energy already changes gradually, so 0 is usually fine)")]
     public float moveSpeed = 0f;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (read-only at runtime)")]
     [SerializeField] private float fractionReadout;
     [SerializeField] private float currentY;
 
@@ -39,7 +39,7 @@ public class PylonLocalYDriver : MonoBehaviour
         if (energySource == null) energySource = GetComponentInParent<ElectricEntity>();
         if (target == null) target = transform;
         if (energySource == null)
-            Debug.LogWarning("PylonLocalYDriver: 未找到 ElectricEntity 电量源", this);
+            Debug.LogWarning("PylonLocalYDriver: ElectricEntity energy source not found", this);
     }
 
     private void Start()
@@ -48,7 +48,7 @@ public class PylonLocalYDriver : MonoBehaviour
             SetY(Mathf.Lerp(yAtEmpty, yAtFull, Mathf.Clamp01(energySource.Fraction)), instant: true);
     }
 
-    // LateUpdate：读到本帧充放电后的最新电量
+    // LateUpdate: read the latest energy after this frame's charging/discharging
     private void LateUpdate()
     {
         if (energySource == null || target == null) return;
@@ -68,7 +68,7 @@ public class PylonLocalYDriver : MonoBehaviour
         target.localPosition = lp;
         currentY = lp.y;
 
-        // 位置有变化 → 通知网格进入高频扫描
+        // Position changed -> tell the grid to enter high-frequency scanning
         if (Mathf.Abs(lp.y - prevY) > 1e-5f && GridSystem.Instance != null)
             GridSystem.Instance.NotifyMoving();
     }

@@ -1,48 +1,48 @@
 using UnityEngine;
 
 /// <summary>
-/// ROBOT　动画桥：把机器人【实际】的运动状态喂给子物体上的 Animator（Rob13 模型）。
+/// ROBOT Animation bridge: feeds the robot's [actual] motion state to the Animator on the child object (Rob13 model).
 ///
-/// 设计要点（和 PlayerAnimator 同一思路）：完全不读输入，只看 CharacterController.velocity。
-/// 因此普通模式（RobotController）和操作模式（RobotConsoleMover）都自动生效 ——
-/// 谁在调 controller.Move() 无所谓，身体怎么动动画就怎么播。
+/// Design (same idea as PlayerAnimator): never reads input, only looks at CharacterController.velocity.
+/// So it works automatically in both normal mode (RobotController) and Operation Mode (RobotConsoleMover) --
+/// it doesn't matter who calls controller.Move(); the animation plays however the body moves.
 ///
-/// 对应 Rob13.controller 的参数（Droll Robots 包自带）：
-///   Speed (float)  ← 水平速度归一化 0~1（1 = 跑速）
-///   run   (float)  ← 是否处于奔跑段 0/1（平滑）
-///   Side  (float)  ← 恒 0（本作没有横向 strafe 动画需求）
-///   Jump  (trigger)← 起跳时触发一次（订阅 CharacterMotorBase.Jumped）
-/// 只会写动画机里真实存在的参数，换别的模型不会刷 "Parameter does not exist"。
+/// Maps to Rob13.controller parameters (bundled with the Droll Robots package):
+///   Speed (float)  ← horizontal speed normalized 0~1 (1 = run speed)
+///   run   (float)  ← whether in the running range 0/1 (smoothed)
+///   Side  (float)  ← always 0 (this game has no strafe animation needs)
+///   Jump  (trigger)← fired once on takeoff (subscribes to CharacterMotorBase.Jumped)
+/// Only writes parameters that actually exist in the animator, so swapping models won't spam "Parameter does not exist".
 ///
-/// 兼容性守卫：Droll Robots 的 Rob13 预制体原本自带 CharacterController + Rob13Ctrl + Root Motion，
-/// 这三样和本作的 CharacterController 移动体系冲突。预制体已经清理过；这里再做一次运行时兜底，
-/// 万一以后重新导入了那个包，也不会把机器人搞坏。
+/// Compatibility guard: the Droll Robots Rob13 prefab originally ships with CharacterController + Rob13Ctrl + Root Motion,
+/// all three of which conflict with this game's CharacterController movement system. The prefab has been cleaned; this is a runtime safety net
+/// so the robot won't break if that package is ever re-imported.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(CharacterController))]
 public class RobotAnimatorBridge : MonoBehaviour
 {
-    [Header("引用（留空自动向下查找）")]
+    [Header("References (leave empty to auto-find in children)")]
     [SerializeField] private Animator animator;
-    [Tooltip("用于取 runSpeed 做归一化；留空自动取同物体 RobotController")]
+    [Tooltip("Used to get runSpeed for normalization; leave empty to use the RobotController on the same object")]
     [SerializeField] private RobotController robotController;
 
-    [Header("调参")]
-    [Tooltip("Speed 参数的平滑时间，越大过渡越柔")]
+    [Header("Tuning")]
+    [Tooltip("Smoothing time for the Speed parameter; larger = softer transitions")]
     public float speedDampTime = 0.1f;
-    [Tooltip("水平速度超过 walkSpeed 的这个比例就算奔跑（0.5 = 走跑速度中点）")]
+    [Tooltip("Horizontal speed above this fraction counts as running (0.5 = midpoint between walk and run speed)")]
     [Range(0f, 1f)] public float runThreshold = 0.5f;
-    [Tooltip("run 参数从 0 到 1 的过渡时间")]
+    [Tooltip("Transition time for the run parameter from 0 to 1")]
     public float runDampTime = 0.15f;
-    [Tooltip("找不到 RobotController 时的备用跑速")]
+    [Tooltip("Fallback run speed when no RobotController is found")]
     public float fallbackRunSpeed = 6f;
-    [Tooltip("Speed 参数按【走速】归一化：走路时就到 1，走/跑的区别交给 run 参数。\n" +
-             "Rob13 的 2D 混合树期望 Speed 是 0 或 1（原作者喂的是 Input.GetAxis），按跑速归一化会让走路停在 0.67，和待机混成慢动作")]
+    [Tooltip("Normalize the Speed parameter by [walk speed]: reaches 1 when walking; walk/run is distinguished by the run parameter.\n" +
+             "Rob13's 2D blend tree expects Speed to be 0 or 1 (the original author fed Input.GetAxis); normalizing by run speed leaves walking at 0.67, blending with idle into slow motion")]
     public bool normalizeByWalkSpeed = true;
-    [Tooltip("动画机的 speedMultiplier 参数值。Rob13.controller 里默认是 2（所有动画双速播），原作者脚本每帧压回 1")]
+    [Tooltip("Value for the animator's speedMultiplier parameter. Rob13.controller defaults to 2 (all animations at double speed); the original author's script forces it back to 1 every frame")]
     public float animationSpeedMultiplier = 1f;
 
-    [Header("动画机参数名（对应 Rob13.controller）")]
+    [Header("Animator Parameter Names (match Rob13.controller)")]
     public string speedParam = "Speed";
     public string runParam = "run";
     public string sideParam = "Side";
@@ -61,7 +61,7 @@ public class RobotAnimatorBridge : MonoBehaviour
         if (robotController == null) robotController = GetComponent<RobotController>();
         motor = GetComponent<CharacterMotorBase>();
 
-        // Animator 在子物体（模型）上；排除掉挂在根上的（本作根上没有，但保险）
+        // Animator is on the child (model); exclude one on the root (this game has none there, but just in case)
         if (animator == null)
         {
             foreach (var a in GetComponentsInChildren<Animator>(true))
@@ -69,15 +69,15 @@ public class RobotAnimatorBridge : MonoBehaviour
         }
         if (animator == null)
         {
-            Debug.LogWarning("[RobotAnimatorBridge] 子物体上没找到 Animator，动画桥不工作", this);
+            Debug.LogWarning("[RobotAnimatorBridge] No Animator found on children; animation bridge disabled", this);
             enabled = false;
             return;
         }
 
-        // —— 兼容性守卫：清掉 Droll Robots 预制体可能残留的冲突组件 ——
+        // -- Compatibility guard: remove conflicting components possibly left over from the Droll Robots prefab --
         GuardAgainstVendorController();
 
-        // —— 只写真实存在的参数 ——
+        // -- Only write parameters that actually exist --
         speedId = Animator.StringToHash(speedParam);
         runId   = Animator.StringToHash(runParam);
         sideId  = Animator.StringToHash(sideParam);
@@ -92,7 +92,7 @@ public class RobotAnimatorBridge : MonoBehaviour
             if (p.nameHash == jumpId  && p.type == AnimatorControllerParameterType.Trigger) hasJump = true;
         }
         if (!hasSpeed)
-            Debug.LogWarning($"[RobotAnimatorBridge] Animator 里没有 Float 参数 \"{speedParam}\"，机器人不会有走/跑动画", this);
+            Debug.LogWarning($"[RobotAnimatorBridge] Animator has no Float parameter \"{speedParam}\"; robot will have no walk/run animation", this);
     }
 
     private void OnEnable()
@@ -109,7 +109,7 @@ public class RobotAnimatorBridge : MonoBehaviour
     {
         if (animator == null) return;
 
-        // 实际水平速度（无论是谁在 Move 这个 CharacterController）
+        // Actual horizontal speed (regardless of who is Moving this CharacterController)
         Vector3 v = controller.velocity;
         float planar = new Vector3(v.x, 0f, v.z).magnitude;
 
@@ -122,7 +122,7 @@ public class RobotAnimatorBridge : MonoBehaviour
         if (hasSpeed) animator.SetFloat(speedId, normalized, speedDampTime, Time.deltaTime);
         if (hasSpeedMul) animator.SetFloat(speedMulId, animationSpeedMultiplier);
 
-        // 走 / 跑分段：速度过了 walk~run 之间的阈值就算跑
+        // Walk / run split: past the threshold between walk~run counts as running
         float runLine = Mathf.Lerp(walkSpeed, runSpeed, runThreshold);
         float targetRun = planar > runLine ? 1f : 0f;
         runValue = runDampTime > 0f
@@ -138,25 +138,25 @@ public class RobotAnimatorBridge : MonoBehaviour
         if (animator != null && hasJump) animator.SetTrigger(jumpId);
     }
 
-    /// 清理 Droll Robots 预制体自带、与本作冲突的东西（预制体已手动清过，这里是兜底）
+    /// Clean up things shipped with the Droll Robots prefab that conflict with this game (prefab already cleaned manually; this is a safety net)
     private void GuardAgainstVendorController()
     {
-        // 1) Root Motion 会让模型自己走，脱离根上的 CharacterController
+        // 1) Root Motion makes the model move on its own, detaching from the root CharacterController
         if (animator.applyRootMotion)
         {
             animator.applyRootMotion = false;
-            Debug.Log("[RobotAnimatorBridge] 已关闭子物体 Animator 的 Apply Root Motion", animator);
+            Debug.Log("[RobotAnimatorBridge] Disabled Apply Root Motion on the child Animator", animator);
         }
 
-        // 2) 子物体上的第二个 CharacterController 会和根上的互相推
+        // 2) A second CharacterController on a child would push against the root one
         foreach (var cc in GetComponentsInChildren<CharacterController>(true))
         {
             if (cc == controller) continue;
             cc.enabled = false;
-            Debug.LogWarning($"[RobotAnimatorBridge] 子物体 {cc.name} 上有多余的 CharacterController，已禁用。建议从预制体删掉", cc);
+            Debug.LogWarning($"[RobotAnimatorBridge] Extra CharacterController on child {cc.name}, disabled. Consider removing it from the prefab", cc);
         }
 
-        // 3) 包自带的 Rob13Ctrl 也读 WASD / 转朝向 / 绑数字键，和本作控制器冲突
+        // 3) The package's Rob13Ctrl also reads WASD / rotates / binds number keys, conflicting with this game's controller
         foreach (var mb in GetComponentsInChildren<MonoBehaviour>(true))
         {
             if (mb == null || mb == this) continue;
@@ -164,7 +164,7 @@ public class RobotAnimatorBridge : MonoBehaviour
             if (tn == "Rob13Ctrl" || tn == "RobotLift")
             {
                 mb.enabled = false;
-                Debug.LogWarning($"[RobotAnimatorBridge] 子物体 {mb.name} 上的 {tn} 与本作控制器冲突，已禁用。建议从预制体删掉", mb);
+                Debug.LogWarning($"[RobotAnimatorBridge] Child {mb.name} has {tn}, which conflicts with this game's controller, disabled. Consider removing it from the prefab", mb);
             }
         }
     }

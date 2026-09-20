@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// 角色类型。player 与 robot 各自独立记录复活点，就靠这个枚举区分。
+/// Character type. player and robot each track their own respawn point, distinguished by this enum.
 /// </summary>
 public enum CharacterType
 {
@@ -10,8 +10,8 @@ public enum CharacterType
 }
 
 /// <summary>
-/// 身份标记组件。挂在 player / robot 的根物体上。
-/// 检查点、死亡区域都通过它来识别是哪个角色进来了。
+/// Identity marker component. Attach to the root of player / robot.
+/// Checkpoints and death zones use it to identify which character entered.
 /// </summary>
 public class CharacterId : MonoBehaviour
 {

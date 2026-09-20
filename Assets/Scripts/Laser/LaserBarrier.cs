@@ -2,94 +2,140 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 激光屏障玩法逻辑（与 Hovl_Laser 视觉分离）：激光沿 forward 常驻。
-///   · 被 blockMask（bridge / 墙）挡住 → 光束在此截断，后面的目标安全。
-///   · 命中【玩家 / 机器人】→ 沿"垂直于光束"方向击退一小步，无法穿越；不掉电。
-///   · 命中【敌人】→ 不击退，可以直接穿过光束，但按每秒 enemyDrainPerSecond 持续掉电。
+/// Laser barrier gameplay logic (separate from the Hovl_Laser visuals): the laser is always on along forward.
+///   - Blocked by blockMask (bridge / wall) -> the beam is cut off there; targets behind it are safe.
+///   - Hits [player / robot] -> nothing by default (knockbackCharacters = false): characters walk through the beam freely.
+///     Turn knockbackCharacters on to restore the old "pushed out of the beam" behaviour.
+///   - Electric fields (ElectricField + their VFX / debug sphere) never block the beam: the beam passes straight through a
+///     field and hits whatever is inside it (e.g. the Energy Relay that opened the field). See BlockRaycast().
+///   - Hits [enemy] -> no knockback, can walk straight through the beam, but continuously loses enemyDrainPerSecond energy per second.
 ///
-/// 两条规则的分工：对角色是"墙"，对敌人是"消耗"。
-/// 敌人能走进光束，代价是电量流失；于是玩家可以把敌人引进激光里晾干，
-/// 而不是被激光单纯挡住动弹不得。
+/// Division of the two rules: for characters it's a "wall", for enemies it's a "drain".
+/// Enemies can walk into the beam at the cost of losing energy; so the player can lure enemies into the laser to drain them dry,
+/// instead of the laser simply blocking them in place.
 ///
-/// 挂在激光塔上（与 Hovl_Laser 同物体、同朝向）。光束方向 = transform.forward。
+/// Attach to the laser tower (same object and orientation as Hovl_Laser). Beam direction = transform.forward.
 /// </summary>
 public class LaserBarrier : MonoBehaviour
 {
-    [Header("光束")]
+    [Header("Beam")]
     public float maxLength = 30f;
-    [Tooltip("光束半径（判定目标是否接触的粗细）")]
+    [Tooltip("Beam radius (thickness used to test whether a target is touching it)")]
     public float beamRadius = 0.35f;
 
-    [Header("层")]
-    [Tooltip("会挡住 / 截断光束的层（bridge、墙）——被它挡住后，后面的目标不受影响")]
+    [Header("Layers")]
+    [Tooltip("Layers that block / cut off the beam (bridge, wall) -- targets behind them are unaffected")]
     public LayerMask blockMask;
-    [Tooltip("会被光束影响的目标层（Player / Robot / Enemy）")]
+    [Tooltip("Target layers affected by the beam (Player / Robot / Enemy)")]
     public LayerMask knockbackMask;
 
-    [Header("击退（仅玩家 / 机器人）")]
-    [Tooltip("每次击退把角色推开的距离（一小步）")]
+    [Header("Knockback (player / robot only)")]
+    [Tooltip("Push the player / robot out of the beam. OFF by default: characters walk through the beam and are not affected by it")]
+    public bool knockbackCharacters = false;
+    [Tooltip("Distance each knockback pushes the character away (a small step)")]
     public float knockbackDistance = 0.8f;
-    [Tooltip("同一角色两次击退的最小间隔（秒），避免每帧狂推")]
+    [Tooltip("Minimum interval (seconds) between two knockbacks on the same character, to avoid pushing every frame")]
     public float knockbackCooldown = 0.25f;
-    [Tooltip("击退是否分帧平滑推（否则瞬移一步）")]
+    [Tooltip("Whether knockback is pushed smoothly over several frames (otherwise teleports one step)")]
     public bool smooth = true;
-    [Tooltip("平滑推速度（单位/秒）")]
+    [Tooltip("Smooth push speed (units/sec)")]
     public float smoothSpeed = 12f;
 
-    [Header("能量衰减（仅敌人）")]
-    [Tooltip("敌人待在光束里时每秒扣除的电量。按实际接触时长连续结算，不是每次触碰扣一笔")]
+    [Header("Energy Drain (enemies only)")]
+    [Tooltip("Energy drained per second while an enemy stays in the beam. Settled continuously by actual contact time, not a lump sum per touch")]
     public float enemyDrainPerSecond = 10f;
-    [Tooltip("勾选：被激光扣到 0 电时直接击杀敌人（走 EnemyDeath.Kill，有溶解表现）。\n取消：只是没电停摆，可被机器人的领域重新充电救活")]
+    [Tooltip("Checked: kill the enemy outright when the laser drains it to 0 (via EnemyDeath.Kill, with dissolve effect).\nUnchecked: it just shuts down from no energy and can be revived by recharging in the robot's electric field")]
     public bool killWhenDrained = false;
 
-    [Header("减速（仅敌人）")]
-    [Tooltip("敌人在光束里的移动速度倍率。0.333 = 降到原速的 1/3；1 = 不减速")]
+    [Header("Slow (enemies only)")]
+    [Tooltip("Enemy movement speed multiplier inside the beam. 0.333 = down to 1/3 of normal speed; 1 = no slow")]
     [Range(0.05f, 1f)]
     public float enemySlowMultiplier = 1f / 3f;
-    [Tooltip("离开光束后减速还残留多久（秒）。给一点余量，避免敌人在光束边缘时速度反复闪烁")]
+    [Tooltip("How long (seconds) the slow lingers after leaving the beam. Gives some slack so speed doesn't flicker at the beam's edge")]
     public float slowLinger = 0.25f;
 
-    [Header("能量衰减（电子物件：吸电桩等）")]
-    [Tooltip("光束打在带 ElectricEntity 的物体上时，每秒扣除的电量。0 = 不影响物件。\n注意：物件的层必须在 blockMask 里，光束要能打到它身上并被截断")]
+    [Header("Energy Drain (electric objects: drain pylons, etc.)")]
+    [Tooltip("Energy drained per second when the beam hits an object with ElectricEntity. 0 = doesn't affect objects.\nNote: the object's layer must be in blockMask so the beam can hit it and be cut off")]
     public float entityDrainPerSecond = 30f;
-    [Tooltip("勾选：只抽吸电桩（EnergyPylon）的电。\n取消：任何非 externallyDriven 的 ElectricEntity 都会被抽")]
+    [Tooltip("Checked: only drain energy pylons (EnergyPylon).\nUnchecked: any ElectricEntity that isn't externallyDriven gets drained")]
     public bool onlyDrainPylons = true;
 
-    [Header("调试")]
+    [Header("Owner")]
+    [Tooltip("The character that fired this beam (set by PlayerLaserGun). The owner and everything under it are never knocked back by their own beam")]
+    public Transform owner;
+
+    [Header("Debug")]
     public bool drawGizmo = true;
-    [Tooltip("打印击退命中日志（掉电是每帧连续的，不打日志，看下面的只读字段）")]
+    [Tooltip("Print knockback hit logs (energy drain is continuous per frame, not logged; see the read-only fields below)")]
     public bool verboseLog = false;
-    [Tooltip("本帧正在被光束抽电的敌人数量")]
+    [Tooltip("Number of enemies being drained by the beam this frame")]
     [SerializeField] private int drainingCountReadout;
-    [Tooltip("本帧正在被光束抽电的电子物件")]
-    [SerializeField] private string entityDrainReadout = "(无)";
+    [Tooltip("Electric object being drained by the beam this frame")]
+    [SerializeField] private string entityDrainReadout = "(none)";
 
     private readonly Dictionary<int, float> cooldowns = new Dictionary<int, float>();
     private readonly Dictionary<Transform, Vector3> pendingPush = new Dictionary<Transform, Vector3>();
     private static readonly Collider[] buffer = new Collider[16];
+    private static readonly RaycastHit[] rayBuffer = new RaycastHit[64];
+
+    /// <summary>
+    /// The beam's block raycast: nearest collider on blockMask along forward, skipping triggers, anything under an
+    /// ElectricField (field volumes / VFX never block a beam), the Ignore Raycast layer and the owner's own hierarchy.
+    /// Shared by the gameplay tick (FixedUpdate) and the Hovl visual (Hovl_LaserDemo), so what you see is what hits.
+    /// </summary>
+    public bool BlockRaycast(out RaycastHit hit)
+    {
+        return BlockRaycast(transform.position, transform.forward, maxLength, out hit);
+    }
+
+    public bool BlockRaycast(Vector3 origin, Vector3 dir, float length, out RaycastHit hit)
+    {
+        int mask = blockMask.value & ~(1 << 2);   // never let "Ignore Raycast" block the beam
+        int n = Physics.RaycastNonAlloc(origin, dir, rayBuffer, length, mask, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        int bestIdx = -1;
+        for (int i = 0; i < n; i++)
+        {
+            var h = rayBuffer[i];
+            if (h.distance >= best) continue;
+            Transform t = h.collider.transform;
+            if (owner != null && (t == owner || t.IsChildOf(owner))) continue;         // own body / weapon
+            if (t.IsChildOf(transform)) continue;                                       // own beam effects
+            if (h.collider.GetComponentInParent<ElectricField>() != null) continue;     // electric field volume / VFX
+            best = h.distance;
+            bestIdx = i;
+        }
+        if (bestIdx < 0) { hit = default; return false; }
+        hit = rayBuffer[bestIdx];
+        return true;
+    }
 
     private void FixedUpdate()
     {
         Vector3 origin = transform.position;
         Vector3 dir = transform.forward;
 
-        // ① 光束被 block 层截断的长度
+        // (1) Length of the beam until cut off by the block layer
         float length = maxLength;
-        entityDrainReadout = "(无)";
-        if (Physics.Raycast(origin, dir, out RaycastHit blockHit, maxLength, blockMask, QueryTriggerInteraction.Ignore))
+        entityDrainReadout = "(none)";
+        if (BlockRaycast(origin, dir, maxLength, out RaycastHit blockHit))
         {
             length = blockHit.distance;
-            // 命中的是转向器 → 激活它，从新角度再发一条
+            // Hit a deflector -> activate it and fire a new beam from the new angle
             var redirector = blockHit.collider.GetComponentInParent<LaserRedirector>();
             if (redirector != null) redirector.Hit(dir);
 
-            // 命中的是电子物件（吸电桩等）→ 持续抽电
+            // Hit an Energy Relay -> it opens its electric field while the beam stays on it
+            var relay = blockHit.collider.GetComponentInParent<EnergyRelay>();
+            if (relay != null) relay.Hit(dir);
+
+            // Hit an electric object (drain pylon, etc.) -> drain continuously
             var entity = blockHit.collider.GetComponentInParent<ElectricEntity>();
             if (entity != null) DrainEntity(entity);
-            else entityDrainReadout = "(无)";
+            else entityDrainReadout = "(none)";
         }
 
-        // ② 在 origin→截断点 的胶囊范围内找目标
+        // (2) Find targets within the capsule from origin to the cut-off point
         Vector3 end = origin + dir * length;
         int count = Physics.OverlapCapsuleNonAlloc(origin, end, beamRadius, buffer, knockbackMask, QueryTriggerInteraction.Ignore);
 
@@ -100,27 +146,30 @@ public class LaserBarrier : MonoBehaviour
             var col = buffer[i];
             if (col == null) continue;
 
-            // 定位到"被射到的那个目标"本身：优先它自己的 CharacterController 所在物体，
-            // 而不是 transform.root（多个敌人可能共用一个父物体，root 会指错对象）
+            // Resolve to "the target that was hit" itself: prefer the object holding its own CharacterController,
+            // not transform.root (several enemies may share one parent, so root would point at the wrong object)
             Transform target = ResolveTarget(col);
             if (target == null) continue;
+            if (owner != null && (target == owner || target.IsChildOf(owner))) continue;   // own beam
 
             if (IsEnemy(target))
             {
-                // —— 敌人：不击退，连续掉电 + 减速 ——
+                // -- Enemy: no knockback, continuous drain + slow --
                 if (DrainEnemy(target)) draining++;
                 SlowEnemy(target);
                 continue;
             }
 
-            // —— 玩家 / 机器人：击退，不掉电 ——
+            // -- Player / robot: no drain; knockback only if enabled (off by default -> they pass through freely) --
+            if (!knockbackCharacters) continue;
+
             int id = target.GetInstanceID();
             if (cooldowns.TryGetValue(id, out float until) && Time.time < until) continue;
             cooldowns[id] = Time.time + knockbackCooldown;
 
-            if (verboseLog) Debug.Log($"[LaserBarrier] 击退 {target.name}", target);
+            if (verboseLog) Debug.Log($"[LaserBarrier] Knockback {target.name}", target);
 
-            // 击退方向：垂直于光束、从光束线指向该角色（推回它所在那侧）
+            // Knockback direction: perpendicular to the beam, from the beam line toward the character (push it back to its own side)
             Vector3 toP = target.position - origin;
             Vector3 along = Vector3.Project(toP, dir);
             Vector3 perp = toP - along;
@@ -142,7 +191,7 @@ public class LaserBarrier : MonoBehaviour
             || t.GetComponentInParent<EnemyDeath>() != null;
     }
 
-    /// 敌人持续掉电。返回是否确实扣到了电（供调试计数）
+    /// Continuously drain an enemy. Returns whether energy was actually deducted (for debug counting)
     private bool DrainEnemy(Transform enemy)
     {
         if (enemyDrainPerSecond <= 0f) return false;
@@ -151,12 +200,12 @@ public class LaserBarrier : MonoBehaviour
         if (es == null) es = enemy.GetComponentInChildren<EnergySystem>();
         if (es == null) return false;
 
-        if (!es.HasEnergy) return false;   // 已经空了，不用重复扣
+        if (!es.HasEnergy) return false;   // Already empty, no need to deduct again
 
-        // FixedUpdate 是固定步长，乘 fixedDeltaTime 得到真实的"每秒 N 点"
+        // FixedUpdate is a fixed step; multiply by fixedDeltaTime to get a true "N points per second"
         es.Drain(enemyDrainPerSecond * Time.fixedDeltaTime);
 
-        // 被激光耗尽 → 可选直接击杀（走 EnemyDeath，有溶解表现）
+        // Drained by the laser -> optionally kill outright (via EnemyDeath, with dissolve effect)
         if (killWhenDrained && es.IsEmpty)
         {
             var death = enemy.GetComponentInParent<EnemyDeath>();
@@ -165,18 +214,18 @@ public class LaserBarrier : MonoBehaviour
         return true;
     }
 
-    /// 电子物件（吸电桩等）持续掉电。走 DrainExternal，绕开 energyMode 限制 ——
-    /// 吸电桩是 ChargeOnly（玩家抽不了它的电），但激光作为环境破坏可以
+    /// Continuously drain an electric object (drain pylon, etc.). Uses DrainExternal to bypass the energyMode restriction --
+    /// drain pylons are ChargeOnly (the player can't drain them), but the laser as environmental damage can
     private void DrainEntity(ElectricEntity entity)
     {
-        if (entityDrainPerSecond <= 0f) { entityDrainReadout = "(无)"; return; }
-        if (onlyDrainPylons && !(entity is EnergyPylon)) { entityDrainReadout = "(无)"; return; }
+        if (entityDrainPerSecond <= 0f) { entityDrainReadout = "(none)"; return; }
+        if (onlyDrainPylons && !(entity is EnergyPylon)) { entityDrainReadout = "(none)"; return; }
 
         entity.DrainExternal(entityDrainPerSecond * Time.fixedDeltaTime);
         entityDrainReadout = $"{entity.name}  {entity.CurrentEnergy:0}/{entity.MaxEnergy:0}";
     }
 
-    /// 敌人减速。每个 FixedUpdate 续期一次，敌人离开光束 slowLinger 秒后自动恢复原速
+    /// Slow the enemy. Renewed every FixedUpdate; the enemy returns to normal speed slowLinger seconds after leaving the beam
     private void SlowEnemy(Transform enemy)
     {
         if (enemySlowMultiplier >= 1f) return;
@@ -219,14 +268,14 @@ public class LaserBarrier : MonoBehaviour
         else t.position += delta;
     }
 
-    // 从被命中的碰撞体定位到"该目标本身"，避免用共用父物体的 root
+    // Resolve from the hit collider to "the target itself", avoiding the shared parent's root
     private static Transform ResolveTarget(Collider col)
     {
         var cc = col.GetComponentInParent<CharacterController>();
         if (cc != null) return cc.transform;
         var chaser = col.GetComponentInParent<EnemyChaser>();
         if (chaser != null) return chaser.transform;
-        return col.transform;   // 兜底：碰撞体自身
+        return col.transform;   // Fallback: the collider itself
     }
 
     private void OnDrawGizmos()

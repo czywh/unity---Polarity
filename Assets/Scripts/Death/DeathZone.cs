@@ -1,19 +1,19 @@
 using UnityEngine;
 
 /// <summary>
-/// 死亡区域。玩家/机器人/敌人跌落进这个 Trigger 就触发死亡。
-/// 一般做成关卡底部一大片看不见的 Box Collider。
+/// Death zone. Player/robot/enemy falling into this Trigger triggers death.
+/// Usually a large invisible Box Collider at the bottom of the level.
 ///
-/// 为什么同时处理 Enter 和 Stay：
-/// CharacterController 高速下坠时，OnTriggerEnter 有概率被 PhysX 漏掉
-/// （尤其本场景的 deadZone 只有 4 个单位厚）。OnTriggerStay 每个物理帧都会
-/// 对"已重叠"的碰撞体回调一次，作为兜底；Die() 内部有 isDying 保护，重复调用无副作用。
+/// Why handle both Enter and Stay:
+/// When a CharacterController falls fast, PhysX may occasionally miss OnTriggerEnter
+/// (especially since this scene's deadZone is only 4 units thick). OnTriggerStay fires every physics frame
+/// for "already overlapping" colliders as a fallback; Die() is guarded by isDying, so repeated calls have no side effects.
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public class DeathZone : MonoBehaviour
 {
-    [Header("调试")]
-    [Tooltip("打开后，每次判定死亡都会在 Console 打印是谁掉进来了")]
+    [Header("Debug")]
+    [Tooltip("When on, logs to the Console who fell in every time death is triggered")]
     public bool verboseLog = false;
 
     void Reset()
@@ -27,21 +27,21 @@ public class DeathZone : MonoBehaviour
 
     private void Kill(Collider other, string phase)
     {
-        // 玩家 / 机器人：走角色死亡系统
+        // Player / robot: go through the character death system
         CharacterDeathHandler handler = other.GetComponentInParent<CharacterDeathHandler>();
         if (handler != null)
         {
-            if (handler.IsDying) return;              // 已在死亡流程里，别重复触发
-            if (verboseLog) Debug.Log($"[死亡区域] {phase}：{handler.name} 进入 {name}，触发死亡", this);
+            if (handler.IsDying) return;              // Already in the death flow, don't trigger again
+            if (verboseLog) Debug.Log($"[DeathZone] {phase}: {handler.name} entered {name}, triggering death", this);
             handler.Die();
             return;
         }
 
-        // 敌人：走敌人死亡
+        // Enemy: go through enemy death
         EnemyDeath enemy = other.GetComponentInParent<EnemyDeath>();
         if (enemy != null)
         {
-            if (verboseLog) Debug.Log($"[死亡区域] {phase}：敌人 {enemy.name} 进入 {name}，触发死亡", this);
+            if (verboseLog) Debug.Log($"[DeathZone] {phase}: enemy {enemy.name} entered {name}, triggering death", this);
             enemy.Kill();
         }
     }

@@ -26,11 +26,15 @@ public class Hovl_LaserDemo : MonoBehaviour
 
     private ParticleSystem[] Effects;
     private ParticleSystem[] Hit;
+    // [Polarity] Optional gameplay barrier on the same object: when present, its filtered raycast (ignores triggers,
+    // electric fields, the shooter's own body) decides where the visual beam ends, so the visual matches the gameplay hit.
+    private LaserBarrier barrier;
 
     void Start ()
     {
         //Get LineRender and ParticleSystem components from current prefab;  
         Laser = GetComponent<LineRenderer>();
+        barrier = GetComponent<LaserBarrier>();
         Effects = GetComponentsInChildren<ParticleSystem>();
         Hit = HitEffect.GetComponentsInChildren<ParticleSystem>();
         //if (Laser.material.HasProperty("_SpeedMainTexUVNoiseZW")) LaserStartSpeed = Laser.material.GetVector("_SpeedMainTexUVNoiseZW");
@@ -51,7 +55,10 @@ public class Hovl_LaserDemo : MonoBehaviour
             Laser.SetPosition(0, transform.position);
             RaycastHit hit; //DELETE THIS IF YOU WANT USE LASERS IN 2D
             //ADD THIS IF YOU WANNT TO USE LASERS IN 2D: RaycastHit2D hit = Physics2D.Raycast(transform.position, transform.forward, MaxLength);       
-            if (Physics.Raycast(transform.position, transform.TransformDirection(Vector3.forward), out hit, MaxLength))//CHANGE THIS IF YOU WANT TO USE LASERRS IN 2D: if (hit.collider != null)
+            bool hitSomething = barrier != null
+                ? barrier.BlockRaycast(transform.position, transform.forward, MaxLength, out hit)   // [Polarity] shared filtered raycast
+                : Physics.Raycast(transform.position, transform.TransformDirection(Vector3.forward), out hit, MaxLength);
+            if (hitSomething)//CHANGE THIS IF YOU WANT TO USE LASERRS IN 2D: if (hit.collider != null)
             {
                 //End laser position if collides with object
                 Laser.SetPosition(1, hit.point);

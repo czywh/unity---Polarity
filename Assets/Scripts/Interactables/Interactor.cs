@@ -1,58 +1,58 @@
 using UnityEngine;
 
 /// <summary>
-/// 交互者：挂在玩家 / 机器人身上。每帧从所有可交互物里挑出
-/// 「在范围内 + 相机对准 + 权限匹配」的最近一个设为焦点，并在按键时触发交互。
+/// Interactor: attach to the player / robot. Every frame, from all interactables, picks the nearest one that is
+/// "in range + aimed at by the camera + permission matches" as the focus, and triggers interaction on key press.
 ///
-/// 控制权仲裁：主动向 CharacterSwitcher 确认"我是不是当前被操控的角色"。
-///   · 不是当前角色 → 立即清空焦点并停止工作
-///   · ExternallyFrozen（操作模式等）→ 同样停止工作
-/// 这样即使忘了把本组件加进 CharacterSwitcher 的控制脚本数组，也不会出现
-/// 「切到玩家后，机器人那边的 Interactor 仍在给共用相机点亮交互提示」的问题。
-/// 仍然建议照常加进数组（双保险，且能一并冻结移动等其它脚本）。
+/// Control arbitration: actively asks CharacterSwitcher "am I the character currently being controlled?".
+///   - Not the current character -> immediately clears focus and stops working
+///   - ExternallyFrozen (Operation Mode, etc.) -> also stops working
+/// So even if you forget to add this component to CharacterSwitcher's control script array, you won't get
+/// "after switching to the player, the robot's Interactor still lights up interaction prompts on the shared camera".
+/// Still recommended to add it to the array as usual (double safety, and it freezes movement and other scripts together).
 /// </summary>
 public class Interactor : MonoBehaviour
 {
-    [Header("身份")]
-    [Tooltip("这个交互者代表谁；决定能用哪些 RobotOnly / PlayerOnly 物体")]
+    [Header("Identity")]
+    [Tooltip("Who this interactor represents; decides which RobotOnly / PlayerOnly objects it can use")]
     public InteractorType type = InteractorType.Player;
 
-    [Header("控制权（留空自动查找场景中的 CharacterSwitcher）")]
-    [Tooltip("控制权威。找不到时退回只看本组件的 enabled 状态")]
+    [Header("Control (auto-finds the scene's CharacterSwitcher if left empty)")]
+    [Tooltip("Control authority. If not found, falls back to only checking this component's enabled state")]
     [SerializeField] private CharacterSwitcher switcher;
 
-    [Header("检测")]
-    [Tooltip("距离参照点；留空用本物体")]
+    [Header("Detection")]
+    [Tooltip("Distance reference point; uses this object if left empty")]
     public Transform origin;
-    [Tooltip("判断对准用的相机；留空用 Camera.main")]
+    [Tooltip("Camera used for the aim check; uses Camera.main if left empty")]
     public Camera cam;
-    [Tooltip("交互所需的最大距离（角色到物体）")]
+    [Tooltip("Max distance required to interact (character to object)")]
     public float interactRange = 3f;
-    [Tooltip("是否要求相机对准物体")]
+    [Tooltip("Whether the camera must be aimed at the object")]
     public bool requireCameraAim = true;
     [Range(0f, 90f)]
-    [Tooltip("相机前方与物体方向的最大夹角，越大越宽松")]
+    [Tooltip("Max angle between camera forward and the object direction; larger is more lenient")]
     public float aimAngle = 35f;
 
-    [Header("按键交互")]
+    [Header("Key Interaction")]
     public KeyCode interactKey = KeyCode.F;
 
-    [Header("调试（运行时只读）")]
-    [Tooltip("本交互者当前是否握有控制权（= 是否为被操控角色且未被外部冻结）")]
+    [Header("Debug (runtime read-only)")]
+    [Tooltip("Whether this interactor currently holds control (= is the controlled character and not externally frozen)")]
     [SerializeField] private bool hasControlReadout;
     [SerializeField] private string currentReadout;
 
-    /// 当前聚焦的物体（无则 null）
+    /// Currently focused object (null if none)
     public InteractableBase Current { get; private set; }
 
-    /// <summary>是否握有控制权：当前被操控的角色，且未被外部冻结</summary>
+    /// <summary>Whether it holds control: the currently controlled character, and not externally frozen</summary>
     public bool HasControl
     {
         get
         {
             if (!isActiveAndEnabled) return false;
-            if (switcher == null) return true;               // 无仲裁者：退回旧行为
-            if (switcher.ExternallyFrozen) return false;     // 操作模式等：全员停手
+            if (switcher == null) return true;               // No arbiter: fall back to old behavior
+            if (switcher.ExternallyFrozen) return false;     // Operation Mode, etc.: everyone stops
 
             return type == InteractorType.Player
                 ? switcher.Current == CharacterSwitcher.Character.Player
@@ -69,11 +69,20 @@ public class Interactor : MonoBehaviour
     {
         hasControlReadout = HasControl;
 
-        // 没有控制权 → 主动清空焦点（否则提示 UI 会读到残留的 Current）
+        // No control -> actively clear focus (otherwise the prompt UI would read a stale Current)
         if (!hasControlReadout)
         {
             ClearCurrent();
-            currentReadout = "(无控制权)";
+            currentReadout = "(no control)";
+            return;
+        }
+
+        // Hands full: while the player carries an Energy Relay, F means "place the relay" (handled by EnergyRelay),
+        // so no other interactable gets focused or triggered
+        if (type == InteractorType.Player && EnergyRelay.CarriedRelay != null)
+        {
+            ClearCurrent();
+            currentReadout = "(carrying " + EnergyRelay.DisplayName + ")";
             return;
         }
 
@@ -86,7 +95,7 @@ public class Interactor : MonoBehaviour
             if (Current != null) Current.OnFocusEnter(this);
         }
 
-        currentReadout = Current != null ? Current.name : "(无)";
+        currentReadout = Current != null ? Current.name : "(none)";
 
         if (Current != null && Input.GetKeyDown(interactKey))
             Current.OnInteract(this);
@@ -110,7 +119,7 @@ public class Interactor : MonoBehaviour
             float dist = Vector3.Distance(o.position, p);
             if (dist > interactRange) continue;
 
-            // 相机对准判断：相机前方与"相机→物体"方向的夹角不超过 aimAngle
+            // Camera aim check: angle between camera forward and the "camera -> object" direction must not exceed aimAngle
             if (requireCameraAim && c != null)
             {
                 Vector3 toObj = p - c.transform.position;
@@ -134,7 +143,7 @@ public class Interactor : MonoBehaviour
 
     private void OnDisable()
     {
-        // 被禁用（如切走角色）时，主动解除当前焦点
+        // When disabled (e.g. switched away from the character), actively release the current focus
         ClearCurrent();
         hasControlReadout = false;
     }
@@ -145,4 +154,4 @@ public class Interactor : MonoBehaviour
         Gizmos.color = new Color(0.3f, 1f, 0.6f, 0.5f);
         Gizmos.DrawWireSphere(o.position, interactRange);
     }
-}
+}

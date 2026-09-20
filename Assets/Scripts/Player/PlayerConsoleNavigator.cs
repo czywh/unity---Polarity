@@ -3,66 +3,66 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 
 /// <summary>
-/// PLAYER　操作模式下的"右键寻路"：WASD 在操作模式里控制机器人，玩家角色则通过
-/// 右键点击场景，沿 GridSystem 的可走格用 A* 自动走到【离点击处最近的可走格】。
+/// PLAYER "Right-click pathfinding" in Operation Mode: in Operation Mode WASD controls the robot, while the player character
+/// moves by right-clicking the scene, using A* over GridSystem's walkable cells to reach [the walkable cell nearest the click].
 ///
-/// 流程：
-///   · 右键 → 鼠标射线先打 bridge 层（grid.walkableMask），打不中再与网格平面求交，得到点击点；
-///   · 点击点所在格若不可走，在 searchRadius 格内找【世界距离离点击点最近】的可走格作为终点；
-///   · 起点 = 玩家所在格（不可走时同样就近兜底）；AStarPathfinder.FindPath 求路径；
-///   · 逐格移动。只驱动水平方向 —— 竖直重力由 PassiveFall 负责（操作模式下 PlayerController 被冻结，
-///     PassiveFall 正好接管），桥移动带人由 PlatformRider 负责，互不打架。
-///   · 桥在走的过程中移动 / 断开：下一格变不可走就自动重算路径；终点也不可走了就停下。
+/// Flow:
+///   - Right click -> mouse ray first hits the bridge layer (grid.walkableMask); if it misses, intersect with the grid plane to get the click point;
+///   - If the clicked cell is not walkable, pick the walkable cell [closest in world distance to the click point] within searchRadius cells as the goal;
+///   - Start = the player's cell (same nearest fallback if not walkable); AStarPathfinder.FindPath computes the path;
+///   - Move cell by cell. Only drives horizontal motion -- vertical gravity is handled by PassiveFall (PlayerController is frozen in Operation Mode,
+///     so PassiveFall takes over), and riding moving bridges is handled by PlatformRider; they don't conflict.
+///   - If a bridge moves / disconnects mid-walk: re-path automatically when the next cell becomes unwalkable; stop if the goal becomes unwalkable too.
 ///
-/// 自给自足：自己判断当前是否处于操作模式（读 OperationModeController.InOperationMode），
-/// 不需要改 OperationModeController，也不需要手动开关本组件。退出操作模式时自动停下。
+/// Self-contained: it checks by itself whether Operation Mode is active (reads OperationModeController.InOperationMode),
+/// so OperationModeController needs no changes and this component needs no manual toggling. Stops automatically when leaving Operation Mode.
 ///
-/// 挂在 Player 根物体上（与 CharacterController / PlayerController 同物体）。
+/// Attach to the Player root (same object as CharacterController / PlayerController).
 /// </summary>
 [RequireComponent(typeof(CharacterController))]
 public class PlayerConsoleNavigator : MonoBehaviour
 {
-    [Header("引用（留空自动查找）")]
-    [Tooltip("网格；留空取 GridSystem.Instance")]
+    [Header("References (auto-found if empty)")]
+    [Tooltip("Grid; uses GridSystem.Instance if empty")]
     public GridSystem grid;
-    [Tooltip("操作模式管理器；留空自动查找")]
+    [Tooltip("Operation Mode manager; auto-found if empty")]
     public OperationModeController operationMode;
-    [Tooltip("射线用的相机；留空取 Camera.main（操作模式下就是那台正交相机）")]
+    [Tooltip("Camera used for raycasts; uses Camera.main if empty (the orthographic camera in Operation Mode)")]
     public Camera rayCamera;
 
-    [Header("输入")]
-    [Tooltip("鼠标键：0 左键 / 1 右键 / 2 中键")]
+    [Header("Input")]
+    [Tooltip("Mouse button: 0 left / 1 right / 2 middle")]
     public int mouseButton = 1;
 
-    [Header("寻路")]
-    [Tooltip("点击处不可走时，向外找最近可走格的半径（格）")]
+    [Header("Pathfinding")]
+    [Tooltip("When the clicked cell is not walkable, radius (in cells) to search outward for the nearest walkable cell")]
     public int searchRadius = 4;
-    [Tooltip("是否允许斜向移动（八方向）")]
+    [Tooltip("Allow diagonal movement (8 directions)")]
     public bool allowDiagonal = true;
-    [Tooltip("到达某格中心的判定距离（世界单位，只比较 XZ）")]
+    [Tooltip("Distance to count as reaching a cell center (world units, XZ only)")]
     public float arriveThreshold = 0.15f;
-    [Tooltip("多久没有明显前进算卡住（秒），卡住会重算一次路径")]
+    [Tooltip("How long (seconds) without clear progress counts as stuck; being stuck triggers one re-path")]
     public float stuckTime = 0.8f;
 
-    [Header("移动")]
-    [Tooltip("走速；≤0 时读取同物体 PlayerController.walkSpeed")]
+    [Header("Movement")]
+    [Tooltip("Walk speed; if <=0, reads PlayerController.walkSpeed on the same object")]
     public float moveSpeedOverride = 0f;
-    [Tooltip("转向速度（度/秒）")]
+    [Tooltip("Turn speed (degrees/sec)")]
     public float turnSpeed = 720f;
 
-    [Header("目标标记（可选）")]
-    [Tooltip("场景里的一个物体（如发光圆环），寻路时摆到终点格上，到达后隐藏。留空不显示")]
+    [Header("Goal Marker (optional)")]
+    [Tooltip("An object in the scene (e.g. a glowing ring) placed on the goal cell while pathfinding and hidden on arrival. Leave empty to show nothing")]
     public Transform destinationMarker;
-    [Tooltip("标记相对格心的抬高量，避免和桥面 Z-fighting")]
+    [Tooltip("Marker height above the cell center, to avoid Z-fighting with the bridge surface")]
     public float markerYOffset = 0.05f;
 
-    [Header("调试")]
+    [Header("Debug")]
     public bool verboseLog = false;
     public bool drawPathGizmos = true;
     [SerializeField] private bool navigatingReadout;
-    [SerializeField] private string goalReadout = "(无)";
+    [SerializeField] private string goalReadout = "(none)";
 
-    // —— 对外只读：供 PlayerAnimator 驱动走路动画 ——
+    // -- Public read-only: for PlayerAnimator to drive the walk animation --
     public bool IsNavigating => path != null && pathIndex < path.Count;
     public float PlanarSpeed { get; private set; }
 
@@ -104,7 +104,7 @@ public class PlayerConsoleNavigator : MonoBehaviour
         PlanarSpeed = 0f;
         if (grid == null) grid = GridSystem.Instance;
 
-        // 不在操作模式 / 死亡中 / 正在传送 → 不接管，并清掉残留路径
+        // Not in Operation Mode / dying / teleporting -> don't take over, and clear any leftover path
         bool dying = death != null && death.IsDying;
         if (!InOperationMode || dying || !controller.enabled || grid == null)
         {
@@ -120,9 +120,9 @@ public class PlayerConsoleNavigator : MonoBehaviour
         navigatingReadout = IsNavigating;
     }
 
-    // ────────────────────────────────────────────────────────────────────
-    //  点击 → 终点格
-    // ────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------
+    //  Click -> goal cell
+    // --------------------------------------------------------------------
 
     private void HandleClick()
     {
@@ -131,22 +131,22 @@ public class PlayerConsoleNavigator : MonoBehaviour
 
         if (!TryGetClickPoint(c.ScreenPointToRay(Input.mousePosition), out Vector3 clickPoint))
         {
-            Log("点击没落在网格上");
+            Log("Click did not land on the grid");
             return;
         }
 
         Vector2Int goal = NearestWalkable(grid.WorldToCell(clickPoint), clickPoint);
         if (goal.x < 0)
         {
-            Log($"点击点 {clickPoint} 附近 {searchRadius} 格内没有可走格");
+            Log($"Click point {clickPoint}: no walkable cell within {searchRadius} cells");
             return;
         }
 
         if (!RequestPath(goal))
-            Log($"到格子 {goal} 无路可达（可能桥没接上）");
+            Log($"No path to cell {goal} (bridge may not be connected)");
     }
 
-    /// 先打 bridge 层（点在桥面上最准），打不中再用网格所在水平面兜底
+    /// Hit the bridge layer first (most accurate on the bridge surface); if it misses, fall back to the grid's horizontal plane
     private bool TryGetClickPoint(Ray ray, out Vector3 point)
     {
         if (Physics.Raycast(ray, out RaycastHit hit, 5000f, grid.walkableMask, QueryTriggerInteraction.Ignore))
@@ -166,7 +166,7 @@ public class PlayerConsoleNavigator : MonoBehaviour
         return false;
     }
 
-    /// 在 searchRadius 格内，找离 referencePoint【世界距离】最近的可走格；找不到返回 (-1,-1)
+    /// Within searchRadius cells, find the walkable cell closest to referencePoint [in world distance]; returns (-1,-1) if none
     private Vector2Int NearestWalkable(Vector2Int center, Vector3 referencePoint)
     {
         if (grid.IsWalkable(center)) return center;
@@ -187,17 +187,17 @@ public class PlayerConsoleNavigator : MonoBehaviour
         return best;
     }
 
-    // ────────────────────────────────────────────────────────────────────
-    //  寻路 / 跟随
-    // ────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------
+    //  Pathfinding / following
+    // --------------------------------------------------------------------
 
     private bool RequestPath(Vector2Int goal)
     {
         Vector2Int start = NearestWalkable(grid.WorldToCell(transform.position), transform.position);
-        if (start.x < 0) { Log("玩家脚下附近没有可走格"); Stop(); return false; }
+        if (start.x < 0) { Log("No walkable cell near the player's feet"); Stop(); return false; }
 
         List<Vector2Int> p = start == goal
-            ? new List<Vector2Int> { goal }   // 已在终点格：走到格心即可
+            ? new List<Vector2Int> { goal }   // Already on the goal cell: just walk to the cell center
             : AStarPathfinder.FindPath(grid, start, goal, allowDiagonal);
 
         if (p == null || p.Count == 0) { Stop(); return false; }
@@ -210,7 +210,7 @@ public class PlayerConsoleNavigator : MonoBehaviour
         lastDistToNext = float.MaxValue;
         goalReadout = goal.ToString();
         SetMarker(true);
-        Log($"寻路：{start} → {goal}，共 {p.Count} 格");
+        Log($"Path: {start} -> {goal}, {p.Count} cells");
         return true;
     }
 
@@ -218,12 +218,12 @@ public class PlayerConsoleNavigator : MonoBehaviour
     {
         if (!IsNavigating) return;
 
-        // 桥移动 / 断电导致下一格不可走 → 重算；终点都不可走了就停
+        // Bridge moved / lost power so the next cell is unwalkable -> re-path; stop if even the goal is unwalkable
         if (!grid.IsWalkable(path[pathIndex]))
         {
             if (!grid.IsWalkable(goalCell) || !RequestPath(goalCell))
             {
-                Log("路径被切断，停止");
+                Log("Path cut off, stopping");
                 Stop();
                 return;
             }
@@ -239,21 +239,21 @@ public class PlayerConsoleNavigator : MonoBehaviour
             pathIndex++;
             lastDistToNext = float.MaxValue;
             lastProgressTime = Time.time;
-            if (!IsNavigating) { Log("到达"); Stop(); }
+            if (!IsNavigating) { Log("Arrived"); Stop(); }
             return;
         }
 
-        // 卡住检测：一段时间内离下一格没有变近 → 重算一次
+        // Stuck detection: no progress toward the next cell for a while -> re-path once
         if (dist < lastDistToNext - 0.05f) { lastDistToNext = dist; lastProgressTime = Time.time; }
         else if (Time.time - lastProgressTime > stuckTime)
         {
-            Log("卡住，重算路径");
+            Log("Stuck, re-pathing");
             if (!RequestPath(goalCell)) { Stop(); return; }
         }
 
         Vector3 dir = to / dist;
-        float step = Mathf.Min(MoveSpeed * Time.deltaTime, dist);   // 不冲过格心
-        controller.Move(dir * step);                                // 只动水平；重力交给 PassiveFall
+        float step = Mathf.Min(MoveSpeed * Time.deltaTime, dist);   // Don't overshoot the cell center
+        controller.Move(dir * step);                                // Horizontal only; gravity is left to PassiveFall
         PlanarSpeed = Time.deltaTime > 0f ? step / Time.deltaTime : 0f;
 
         Quaternion look = Quaternion.LookRotation(dir, Vector3.up);
@@ -263,20 +263,20 @@ public class PlayerConsoleNavigator : MonoBehaviour
             destinationMarker.position = goalWorldForMarker + Vector3.up * markerYOffset;
     }
 
-    /// 取消当前寻路
+    /// Cancel current pathfinding
     public void Stop()
     {
         path = null;
         pathIndex = 0;
         PlanarSpeed = 0f;
         navigatingReadout = false;
-        goalReadout = "(无)";
+        goalReadout = "(none)";
         SetMarker(false);
     }
 
-    // ────────────────────────────────────────────────────────────────────
-    //  杂项
-    // ────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------
+    //  Misc
+    // --------------------------------------------------------------------
 
     private void SetMarker(bool on)
     {
@@ -290,7 +290,7 @@ public class PlayerConsoleNavigator : MonoBehaviour
 
     private void Log(string msg)
     {
-        if (verboseLog) Debug.Log($"[右键寻路] {msg}", this);
+        if (verboseLog) Debug.Log($"[RightClickNav] {msg}", this);
     }
 
     private void OnDrawGizmos()

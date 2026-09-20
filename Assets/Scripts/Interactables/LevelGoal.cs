@@ -1,30 +1,30 @@
 using UnityEngine;
 
 /// <summary>
-/// PROP　关卡终点（final target）。继承 InteractableBase，走现有交互系统：
-///   · 机器人靠近并对准 → InteractionPrompt 自动显示 interactVerb 的原文（默认 Press "F" to Complete）
-///   · 按 F → OnInteract → GameResultManager.Win()
+/// PROP Level goal (final target). Inherits InteractableBase and uses the existing interaction system:
+///   - Robot approaches and aims at it -> InteractionPrompt automatically shows the raw interactVerb text (default Press "F" to Complete)
+///   - Press F -> OnInteract -> GameResultManager.Win()
 ///
-/// 挂到场景里的 final target 上即可。需要一个 Collider 让 Interactor 的范围 / 对准判定命中
-/// （Reset 时若没有会自动加一个 Box Trigger）。
-/// 默认只允许机器人交互（access = RobotOnly）。
+/// Just attach it to the final target in the scene. It needs a Collider so the Interactor's range / aim check can hit it
+/// (Reset adds a Box Trigger automatically if there is none).
+/// By default only the robot can interact (access = RobotOnly).
 /// </summary>
 [DisallowMultipleComponent]
 public class LevelGoal : InteractableBase
 {
-    [Header("终点")]
-    [Tooltip("触发一次后自动关闭，避免重复弹结算")]
+    [Header("Goal")]
+    [Tooltip("Auto-disable after triggering once, to avoid showing the results screen repeatedly")]
     public bool oneShot = true;
-    [Tooltip("勾上则不用按 F：机器人一进入本物体的 Trigger 就直接胜利（需要 Collider.isTrigger）")]
+    [Tooltip("If checked, no need to press F: the robot wins as soon as it enters this object's Trigger (requires Collider.isTrigger)")]
     public bool winOnTouch = false;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (read-only at runtime)")]
     [SerializeField] private bool triggeredReadout;
 
     private bool triggered;
 
-    /// 关卡一开始就把 GameResultManager / LevelStats 拉起来，计时和死亡钩子从第一帧生效。
-    /// 否则它们要到按 F 那一刻才诞生，结算全是 0。
+    /// Bring up GameResultManager / LevelStats at level start, so the timer and death hooks work from the first frame.
+    /// Otherwise they'd only be created when F is pressed, and the results would all be 0.
     private void Awake()
     {
         GameResultManager.GetOrCreate();
@@ -47,7 +47,7 @@ public class LevelGoal : InteractableBase
     {
         base.OnInteract(interactor);
         if (!CanBeUsedBy(interactor.type)) return;
-        Trigger($"{interactor.name} 按下交互键");
+        Trigger($"{interactor.name} pressed interact");
     }
 
     private void OnTriggerEnter(Collider other)
@@ -57,7 +57,7 @@ public class LevelGoal : InteractableBase
         if (id == null) return;
         var who = id.characterType == CharacterType.Robot ? InteractorType.Robot : InteractorType.Player;
         if (!CanBeUsedBy(who)) return;
-        Trigger($"{id.name} 进入终点区域");
+        Trigger($"{id.name} entered the goal area");
     }
 
     private void Trigger(string reason)
@@ -65,9 +65,9 @@ public class LevelGoal : InteractableBase
         if (triggered && oneShot) return;
         triggered = true;
         triggeredReadout = true;
-        if (oneShot) interactable = false;   // 提示立刻消失，别人也不能再触发
+        if (oneShot) interactable = false;   // Prompt disappears immediately and nobody else can trigger it
 
-        Debug.Log($"[终点] 胜利：{reason}", this);
+        Debug.Log($"[Goal] Victory: {reason}", this);
         GameResultManager.GetOrCreate().Win(this);
     }
 }

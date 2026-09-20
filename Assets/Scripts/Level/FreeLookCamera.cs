@@ -4,24 +4,24 @@ using UnityEngine;
 
 public class FreeLookCamera : MonoBehaviour
 {
-    [Header("跟随目标")]
+    [Header("Follow Target")]
     public Transform target;
-    public Vector3 targetOffset = new Vector3(0, 1.5f, 0); // 目标位置偏移
+    public Vector3 targetOffset = new Vector3(0, 1.5f, 0); // Target position offset
 
-    [Header("相机距离")]
+    [Header("Camera Distance")]
     [Range(1f, 20f)] public float distance = 5.0f;
     [Range(1f, 10f)] public float minDistance = 2.0f;
     [Range(5f, 20f)] public float maxDistance = 10.0f;
     public float zoomSpeed = 2.0f;
 
-    [Header("旋转控制")]
+    [Header("Rotation Control")]
     [Range(50f, 500f)] public float xSpeed = 120.0f;
     [Range(50f, 500f)] public float ySpeed = 120.0f;
     [Range(-90f, 0f)] public float yMinLimit = -20f;
     [Range(0f, 90f)] public float yMaxLimit = 80f;
     [Range(0f, 0.5f)] public float rotationSmoothTime = 0.12f;
 
-    [Header("高级设置")]
+    [Header("Advanced Settings")]
     public bool autoRotate = false;
     [Range(0f, 2f)] public float autoRotateSpeed = 0.5f;
     public bool invertY = false;
@@ -49,7 +49,7 @@ public class FreeLookCamera : MonoBehaviour
         currentDistance = distance;
         desiredDistance = distance;
 
-        // 初始化当前旋转
+        // Initialize current rotation
         xDeg = Vector3.Angle(Vector3.right, transform.right);
         yDeg = Vector3.Angle(Vector3.up, transform.up);
         currentRotation = transform.rotation;
@@ -68,7 +68,7 @@ public class FreeLookCamera : MonoBehaviour
 
     void HandleInput()
     {
-        // 鼠标滚轮缩放
+        // Mouse wheel zoom
         desiredDistance = Mathf.Clamp(desiredDistance - Input.GetAxis("Mouse ScrollWheel") * zoomSpeed, minDistance, maxDistance);
     }
 
@@ -78,17 +78,17 @@ public class FreeLookCamera : MonoBehaviour
             UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
             return;
 
-        // 获取鼠标输入
+        // Read mouse input
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
         if (Mathf.Abs(mouseX) > 0.01f || Mathf.Abs(mouseY) > 0.01f)
         {
-            // 应用旋转方向设置
+            // Apply rotation direction settings
             xDeg += mouseX * xSpeed * 0.02f * (invertX ? -1 : 1);
             yDeg -= mouseY * ySpeed * 0.02f * (invertY ? -1 : 1);
 
-            // 限制垂直角度
+            // Clamp vertical angle
             yDeg = Mathf.Clamp(yDeg, yMinLimit, yMaxLimit);
         }
         else if (autoRotate)
@@ -96,23 +96,23 @@ public class FreeLookCamera : MonoBehaviour
             xDeg += autoRotateSpeed * 0.02f;
         }
 
-        // 使用四元数计算旋转，避免万向节锁
+        // Use quaternions for rotation to avoid gimbal lock
         desiredRotation = Quaternion.Euler(yDeg, xDeg, 0);
         currentRotation = Quaternion.Slerp(currentRotation, desiredRotation, rotationSmoothTime * Time.timeScale);
     }
 
     void UpdateCameraPosition()
     {
-        // 平滑过渡距离
+        // Smoothly transition distance
         currentDistance = Mathf.SmoothDamp(currentDistance, desiredDistance, ref velDistance, rotationSmoothTime);
 
-        // 计算目标位置(考虑偏移)
+        // Compute target position (including offset)
         Vector3 targetPosition = target.position + targetOffset;
 
-        // 计算相机位置
+        // Compute camera position
         position = targetPosition - (currentRotation * Vector3.forward * currentDistance);
 
-        // 检查障碍物
+        // Check for obstacles
         CheckCameraOcclusion(targetPosition, ref position);
 
         transform.rotation = currentRotation;
@@ -124,7 +124,7 @@ public class FreeLookCamera : MonoBehaviour
         RaycastHit hit;
         if (Physics.Linecast(from, to, out hit))
         {
-            // 如果相机与目标之间有障碍物，调整相机位置
+            // If there's an obstacle between camera and target, adjust camera position
             to = new Vector3(hit.point.x + hit.normal.x * 0.2f,
                             hit.point.y + hit.normal.y * 0.2f,
                             hit.point.z + hit.normal.z * 0.2f);

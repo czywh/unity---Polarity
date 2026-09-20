@@ -1,29 +1,29 @@
 using UnityEngine;
 
 /// <summary>
-/// 2.5D 跟拍相机：平滑跟随一个目标 (target)，按住右键可上下俯仰。
-/// 只负责"怎么跟"，不关心当前控制的是谁——切换焦点由 CharacterSwitcher 调用 SetTarget 完成。
-/// 挂在 Main Camera 上。
+/// 2.5D follow camera: smoothly follows a target; hold right mouse to tilt pitch up/down.
+/// Only handles "how to follow", not who is being controlled -- switching focus is done by CharacterSwitcher calling SetTarget.
+/// Attach to the Main Camera.
 /// </summary>
 public class HorizontalCamera : MonoBehaviour
 {
-    [Header("基础跟随设置")]
-    public Transform target;                            // 跟随目标（一般是角色身上的焦点空物体）
-    public float smoothSpeed = 5f;                      // 位置 / 注视点跟随平滑度（切换时也用它滑过去）
-    public Vector3 baseOffset = new Vector3(0, 0, -5f); // 基础偏移（x 用于侧移，z 在下方由距离覆盖）
+    [Header("Basic Follow Settings")]
+    public Transform target;                            // Follow target (usually an empty focus object on the character)
+    public float smoothSpeed = 5f;                      // Position / look-at follow smoothing (also used to glide over when switching)
+    public Vector3 baseOffset = new Vector3(0, 0, -5f); // Base offset (x for side shift; z is overridden by distance below)
 
-    [Header("鼠标俯仰控制")]
-    public bool mouseTiltEnabled = true;    // 是否启用鼠标俯仰（按住右键）
-    public float mouseSensitivity = 1f;     // 鼠标灵敏度
-    public float minPitchAngle = -15f;      // 最小俯仰角（向下）
-    public float maxPitchAngle = 45f;       // 最大俯仰角（向上）
-    public float rotationSmoothness = 5f;   // 俯仰过渡平滑度
+    [Header("Mouse Pitch Control")]
+    public bool mouseTiltEnabled = true;    // Enable mouse pitch (hold right mouse)
+    public float mouseSensitivity = 1f;     // Mouse sensitivity
+    public float minPitchAngle = -15f;      // Minimum pitch angle (down)
+    public float maxPitchAngle = 45f;       // Maximum pitch angle (up)
+    public float rotationSmoothness = 5f;   // Pitch transition smoothing
 
-    [Header("距离设置")]
-    public float followDistance = 5f;       // 固定跟随距离
-    public float heightOffset = 2f;         // 相机高度偏移
+    [Header("Distance Settings")]
+    public float followDistance = 5f;       // Fixed follow distance
+    public float heightOffset = 2f;         // Camera height offset
 
-    [Header("边界限制")]
+    [Header("Bounds")]
     public bool useBounds = false;
     public float minX = -10f, maxX = 10f;
     public float minY = -5f, maxY = 5f;
@@ -52,7 +52,7 @@ public class HorizontalCamera : MonoBehaviour
     {
         if (!mouseTiltEnabled) return;
 
-        // 按住右键滑动鼠标控制俯仰（左键留给机器人导弹瞄准，不冲突）
+        // Hold right mouse and move to control pitch (left mouse is reserved for robot missile aiming, no conflict)
         if (Input.GetMouseButton(1))
         {
             float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
@@ -86,17 +86,17 @@ public class HorizontalCamera : MonoBehaviour
             targetPosition.z = Mathf.Clamp(targetPosition.z, minZ, maxZ);
         }
 
-        // 位置平滑跟随：切换目标时，相机就是靠这一步从旧角色滑向新角色
+        // Smooth position follow: when the target switches, this step is what glides the camera from the old character to the new one
         transform.position = Vector3.Lerp(transform.position, targetPosition, smoothSpeed * Time.deltaTime);
 
-        // 注视点也平滑，避免切换瞬间镜头硬转
+        // Smooth the look-at point too, to avoid a hard camera snap at the moment of switching
         currentLookPoint = Vector3.Lerp(currentLookPoint, GetLookPoint(), smoothSpeed * Time.deltaTime);
         transform.LookAt(currentLookPoint);
     }
 
     /// <summary>
-    /// 切换跟随目标。instant=true 立即对准（用于初始化）；
-    /// instant=false 保持平滑过渡（角色切换时镜头滑向新目标）。
+    /// Switch follow target. instant=true snaps immediately (for initialization);
+    /// instant=false keeps the smooth transition (camera glides to the new target on character switch).
     /// </summary>
     public void SetTarget(Transform newTarget, bool instant = false)
     {

@@ -3,40 +3,40 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// UI-02 世界跟随电量条（被动版，池化）。数据源改为通用接口 IBarSource，
-/// 于是同一套 prefab / 池子既能显示电子实体(ElectricEntity)，也能显示敌人(EnergySystem)。
+/// UI-02 World-following energy bar (passive, pooled). Data source is now the generic IBarSource interface,
+/// so the same prefab / pool can show both electric entities (ElectricEntity) and enemies (EnergySystem).
 ///
-/// 本条不自己决定显隐，由 EntityBarManager 通过 Assign / KeepShown / Hide 控制。
-/// 自己只负责：跟随目标世界坐标、双层缓冲填充、阈值线、配色、淡入淡出。
-/// 挂在 Overlay Canvas 下（通常作为 Prefab 被池化实例化）。
+/// This bar doesn't decide its own visibility; EntityBarManager controls it via Assign / KeepShown / Hide.
+/// It is only responsible for: following the target's world position, two-layer buffered fill, threshold line, colors, fade in/out.
+/// Lives under an Overlay Canvas (usually instantiated from a pooled Prefab).
 /// </summary>
 [DisallowMultipleComponent]
 public class EntityEnergyBar : MonoBehaviour
 {
-    [Header("引用")]
-    [Tooltip("世界→屏幕换算相机；留空取 Camera.main")]
+    [Header("References")]
+    [Tooltip("Camera for world -> screen conversion; uses Camera.main if left empty")]
     [SerializeField] private Camera cam;
     [SerializeField] private CanvasGroup group;
     [SerializeField] private RectTransform rect;
     [SerializeField] private Image frontFill;
     [SerializeField] private Image bufferFill;
-    [Tooltip("阈值刻度竖线，可留空")]
+    [Tooltip("Threshold tick line, can be left empty")]
     [SerializeField] private RectTransform thresholdMarker;
-    [Tooltip("可选数字标签")]
+    [Tooltip("Optional number label")]
     [SerializeField] private TMP_Text label;
 
-    [Header("世界跟随")]
-    [Tooltip("屏幕上额外偏移多少像素")]
+    [Header("World Follow")]
+    [Tooltip("Extra on-screen offset in pixels")]
     [SerializeField] private Vector2 screenPixelOffset = new Vector2(0f, 24f);
 
-    [Header("缓冲填充速度")]
+    [Header("Buffered Fill Speed")]
     [SerializeField] private float fastSpeed = 8f;
     [SerializeField] private float slowSpeed = 1.5f;
 
-    [Header("淡入淡出")]
+    [Header("Fade In/Out")]
     [SerializeField] private float fadeSpeed = 10f;
 
-    [Header("配色")]
+    [Header("Colors")]
     [SerializeField] private Color interactiveColor = new Color(0.66f, 0.30f, 0.95f);
     [SerializeField] private Color inactiveColor = new Color(0.55f, 0.55f, 0.60f);
 
@@ -46,9 +46,9 @@ public class EntityEnergyBar : MonoBehaviour
     private RectTransform canvasRect;
     private Camera canvasCam;
 
-    /// 当前跟随的数据源（null = 空闲，可被复用）
+    /// Currently followed data source (null = idle, can be reused)
     public IBarSource Target => target;
-    /// 是否空闲（已彻底淡出、无目标 / 目标已失效）
+    /// Whether idle (fully faded out, no target / target invalid)
     public bool IsFree => target == null || !target.BarAlive;
 
     private void Awake()
@@ -71,7 +71,7 @@ public class EntityEnergyBar : MonoBehaviour
         alphaTarget = 0f;
     }
 
-    /// 开始显示一个新目标（切目标时填充值直接对齐）
+    /// Start showing a new target (fill value snaps directly when switching targets)
     public void Assign(IBarSource e)
     {
         target = e;
@@ -90,10 +90,10 @@ public class EntityEnergyBar : MonoBehaviour
     {
         float dt = Time.deltaTime;
 
-        // 目标失效（被销毁）→ 立即释放
+        // Target invalid (destroyed) -> release immediately
         if (target != null && !target.BarAlive) { target = null; if (group != null) group.alpha = 0f; return; }
 
-        // —— 世界跟随定位 ——
+        // -- World-follow positioning --
         bool onScreen = false;
         if (target != null && cam != null)
         {
@@ -107,7 +107,7 @@ public class EntityEnergyBar : MonoBehaviour
             }
         }
 
-        // —— 缓冲填充 ——
+        // -- Buffered fill --
         if (target != null)
         {
             float t = target.Fraction;
@@ -127,7 +127,7 @@ public class EntityEnergyBar : MonoBehaviour
                 label.text = $"{Mathf.RoundToInt(target.CurrentEnergy)} / {Mathf.RoundToInt(target.MaxEnergy)}";
         }
 
-        // —— 淡入淡出（相机背后 / 无法定位时本帧强制透明，但不释放目标）——
+        // -- Fade in/out (behind the camera / can't be positioned: force transparent this frame, but don't release the target) --
         float a = (target != null && !onScreen) ? 0f : alphaTarget;
         if (group != null) group.alpha = Mathf.MoveTowards(group.alpha, a, fadeSpeed * dt);
 
@@ -139,7 +139,7 @@ public class EntityEnergyBar : MonoBehaviour
     {
         if (thresholdMarker == null || target == null || frontFill == null) return;
         float tf = target.BarThresholdFraction;
-        if (tf < 0f) { thresholdMarker.gameObject.SetActive(false); return; }  // 无阈值线（如敌人）
+        if (tf < 0f) { thresholdMarker.gameObject.SetActive(false); return; }  // No threshold line (e.g. enemies)
         thresholdMarker.gameObject.SetActive(true);
         float w = frontFill.rectTransform.rect.width;
         Vector2 p = thresholdMarker.anchoredPosition;

@@ -1,22 +1,22 @@
 using UnityEngine;
 
 /// <summary>
-/// 电量条的通用数据源：血条只需要这些信息即可渲染，与具体是 ElectricEntity 还是敌人无关。
+/// Generic data source for energy bars: the bar only needs this info to render, regardless of whether it's an ElectricEntity or an enemy.
 /// </summary>
 public interface IBarSource
 {
-    bool BarAlive { get; }               // 目标是否仍有效（被销毁则 false）
+    bool BarAlive { get; }               // Whether the target is still valid (false if destroyed)
     float Fraction { get; }              // 0..1
     float CurrentEnergy { get; }
     float MaxEnergy { get; }
-    bool BarInteractive { get; }         // 前景条配色：激活(紫) / 非激活(灰)
-    float BarThresholdFraction { get; }  // 阈值线位置 0..1；<0 = 无阈值线
-    Vector3 BarWorldPosition { get; }    // 条在世界中的锚点
+    bool BarInteractive { get; }         // Foreground bar color: active (purple) / inactive (gray)
+    float BarThresholdFraction { get; }  // Threshold line position 0..1; <0 = no threshold line
+    Vector3 BarWorldPosition { get; }    // Bar's anchor point in the world
 }
 
 /// <summary>
-/// ElectricEntity → IBarSource 的包装器（纯 C# 适配，不改 ElectricEntity 本身）。
-/// 由 EntityBarManager 缓存复用，每个实体一个。
+/// ElectricEntity -> IBarSource wrapper (pure C# adapter, doesn't modify ElectricEntity itself).
+/// Cached and reused by EntityBarManager, one per entity.
 /// </summary>
 public class ElectricEntityBarSource : IBarSource
 {

@@ -1,42 +1,42 @@
 using UnityEngine;
 
 /// <summary>
-/// 激光转向器：被激光射中后，从本装置再发射一条【可调角度 / 可调长度】的新激光。
-/// 输出激光【不作为本装置子物体】，方向用"初始朝向"或"入射方向"计算，
-/// 因此本装置即使自转（SpinY 装饰），输出激光方向也不受影响。
+/// Laser redirector: when hit by a laser, fires a new laser with [adjustable angle / adjustable length] from this device.
+/// The output laser is [not a child of this device]; its direction is computed from the "initial facing" or the "incoming direction",
+/// so even if this device spins (SpinY decoration), the output laser direction is unaffected.
 ///
-/// 调试：与 LaserTower 一致，OnDrawGizmos 常驻画出输出射线的方向与长度（红线 + 黄色枪口球），
-/// 不用选中、不用进 Play 就能对着调 redirectAngle。
+/// Debug: same as LaserTower, OnDrawGizmos always draws the output ray's direction and length (red line + yellow muzzle sphere),
+/// so you can tune redirectAngle without selecting it or entering Play mode.
 /// </summary>
 public class LaserRedirector : MonoBehaviour
 {
-    [Header("输出激光 prefab（带 Hovl_Laser + LaserBarrier）")]
+    [Header("Output laser prefab (with Hovl_Laser + LaserBarrier)")]
     public GameObject laserPrefab;
 
-    [Header("转向角度")]
-    [Tooltip("相对入射方向偏转的角度（度）")]
+    [Header("Redirect Angle")]
+    [Tooltip("Deflection angle relative to the incoming direction (degrees)")]
     public float redirectAngle = 90f;
-    [Tooltip("绕哪个轴偏转（一般世界 Up 做水平转向）")]
+    [Tooltip("Axis to deflect around (usually world Up for horizontal redirection)")]
     public Vector3 rotateAxis = Vector3.up;
-    [Tooltip("勾选：忽略入射方向，用【初始 forward】作为固定输出方向（自转也不变）")]
+    [Tooltip("Checked: ignore the incoming direction and use the [initial forward] as a fixed output direction (unaffected by spinning)")]
     public bool useFixedDirection = false;
 
-    [Header("输出位置 / 参数")]
-    [Tooltip("输出起点相对本装置的偏移（按初始朝向，自转不影响）")]
+    [Header("Output Position / Parameters")]
+    [Tooltip("Output origin offset relative to this device (uses initial facing, unaffected by spinning)")]
     public Vector3 muzzleLocalOffset = Vector3.zero;
-    [Tooltip("输出激光长度（实时可改）")]
+    [Tooltip("Output laser length (editable at runtime)")]
     public float maxLength = 40f;
     public Vector3 laserScale = Vector3.one;
 
-    [Header("持续判定")]
-    [Tooltip("被击中后，若这么久没再被击中则关闭输出（秒）")]
+    [Header("Sustain")]
+    [Tooltip("After being hit, turn off the output if not hit again within this time (seconds)")]
     public float sustainTime = 0.2f;
 
-    [Header("调试")]
-    [Tooltip("Scene 视图常驻画出输出射线的方向与长度")]
+    [Header("Debug")]
+    [Tooltip("Always draw the output ray's direction and length in the Scene view")]
     public bool drawGizmo = true;
 
-    [Header("运行时（只读）")]
+    [Header("Runtime (read-only)")]
     [SerializeField] private bool active;
     [SerializeField] private Vector3 lastIncomingDir;
 
@@ -45,7 +45,7 @@ public class LaserRedirector : MonoBehaviour
     private LaserBarrier outBarrier;
     private float offUntil;
 
-    // 初始朝向 / 位置（自转不改变它们）
+    // Initial facing / position (not changed by spinning)
     private Quaternion initialRotation;
     private Vector3 initialForward;
     private bool initialized;
@@ -58,7 +58,7 @@ public class LaserRedirector : MonoBehaviour
         initialized = true;
     }
 
-    /// 由 LaserBarrier 在命中本装置时调用，传入入射激光方向（世界）
+    /// Called by LaserBarrier when it hits this device, passing the incoming laser direction (world)
     public void Hit(Vector3 incomingDir)
     {
         lastIncomingDir = incomingDir.sqrMagnitude > 0.0001f ? incomingDir.normalized : InitialForward;
@@ -73,42 +73,42 @@ public class LaserRedirector : MonoBehaviour
         else if (active) UpdateOutput();
     }
 
-    // ── 方向 / 位置（编辑期 Awake 还没跑，统一用当前 transform 兜底）──
+    // -- Direction / position (Awake hasn't run in edit mode, so fall back to the current transform) --
 
     private Vector3 InitialForward => initialized ? initialForward : transform.forward;
     private Quaternion InitialRotation => initialized ? initialRotation : transform.rotation;
 
-    /// 入射方向：运行时用真实记录值，编辑期用本物体 forward
+    /// Incoming direction: the recorded value at runtime, this object's forward in edit mode
     private Vector3 IncomingDirection()
     {
         if (initialized && lastIncomingDir.sqrMagnitude > 0.0001f) return lastIncomingDir.normalized;
         return transform.forward;
     }
 
-    /// 输出方向（Gizmo 与运行时共用同一份计算）
+    /// Output direction (Gizmo and runtime share the same calculation)
     public Vector3 OutputDirection()
     {
-        if (useFixedDirection) return InitialForward;   // 固定方向，自转不影响
+        if (useFixedDirection) return InitialForward;   // Fixed direction, unaffected by spinning
         Vector3 axis = rotateAxis.sqrMagnitude > 0.0001f ? rotateAxis.normalized : Vector3.up;
         return (Quaternion.AngleAxis(redirectAngle, axis) * IncomingDirection()).normalized;
     }
 
-    /// 输出起点（用初始朝向算偏移，自转时枪口不乱跑）
+    /// Output origin (offset computed from initial facing, so the muzzle doesn't wander while spinning)
     public Vector3 MuzzlePosition() => transform.position + InitialRotation * muzzleLocalOffset;
 
-    // 方向与世界 Up 平行时换个 up，避免 LookRotation 刷警告
+    // Use a different up when the direction is parallel to world Up, to avoid LookRotation warnings
     private static Quaternion SafeLook(Vector3 dir)
     {
         Vector3 up = Mathf.Abs(Vector3.Dot(dir, Vector3.up)) > 0.999f ? Vector3.forward : Vector3.up;
         return Quaternion.LookRotation(dir, up);
     }
 
-    // ── 输出激光实例 ──
+    // -- Output laser instance --
 
     private void SpawnOutput()
     {
-        if (laserPrefab == null) { Debug.LogWarning("[LaserRedirector] 未指定 laserPrefab", this); active = false; return; }
-        // 不设父物体 → 不继承本装置的自转 / 缩放
+        if (laserPrefab == null) { Debug.LogWarning("[LaserRedirector] laserPrefab not assigned", this); active = false; return; }
+        // No parent → doesn't inherit this device's spin / scale
         outputInstance = Instantiate(laserPrefab, MuzzlePosition(), SafeLook(OutputDirection()), null);
         outputInstance.transform.localScale = laserScale;
         outputInstance.SetActive(true);
@@ -123,7 +123,7 @@ public class LaserRedirector : MonoBehaviour
         outputInstance.transform.position = MuzzlePosition();
         outputInstance.transform.rotation = SafeLook(OutputDirection());
         outputInstance.transform.localScale = laserScale;
-        // 每帧同步长度 → 运行时改 maxLength 立即生效
+        // Sync length every frame → changing maxLength at runtime takes effect immediately
         if (outHovl != null) outHovl.MaxLength = maxLength;
         if (outBarrier != null) outBarrier.maxLength = maxLength;
     }
@@ -136,7 +136,7 @@ public class LaserRedirector : MonoBehaviour
 
     private void OnDestroy() => DespawnOutput();
 
-    // ── Gizmo：与 LaserTower 同一套画法 ──
+    // -- Gizmo: same drawing as LaserTower --
 
     private void OnDrawGizmos()
     {

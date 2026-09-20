@@ -1,65 +1,65 @@
 using UnityEngine;
 
 /// <summary>
-/// ROBOT　操作模式（上帝视角）下的机器人控制器。
-///   · 移动：WASD 固定世界轴 —— W→X+ S→X- A→Z+ D→Z-；速度与 RobotController 一致，Shift 加速。
-///   · 跳跃：Input Manager 的 "Jump"（默认空格），跳跃高度 / 是否允许跳跃取自 RobotController，
-///          同样带土狼时间与跳跃缓冲，手感与非操作模式完全一致。
-///   · 领域：按 E 开 / 关电子领域（IFieldEmitter）。
-///   · 交互：靠近任何机器人可用的交互物（纯距离，无需对准）按 F —— 绕开被冻结的 Interactor：
-///       充电桩走 ChargeDirect 持续充电；其它（如终点 LevelGoal）走 OnInteract 一次性触发。
-///   · 死亡：机器人死亡中冻结输入（不移动 / 不开领域 / 不充电），仅保留重力。
+/// ROBOT Operation Mode (god view) robot controller.
+///   - Move: WASD on fixed world axes -- W→X+ S→X- A→Z+ D→Z-; speed matches RobotController, Shift to run.
+///   - Jump: Input Manager "Jump" (Space by default); jump height / whether jumping is allowed come from RobotController,
+///          with the same coyote time and jump buffer, so it feels identical to non-Operation Mode.
+///   - Field: press E to toggle the electric field (IFieldEmitter).
+///   - Interact: near any robot-usable interactable (distance only, no aiming) press F -- bypasses the frozen Interactor:
+///       charging docks use ChargeDirect for continuous charging; others (e.g. the LevelGoal) use OnInteract as a one-shot trigger.
+///   - Death: while the robot is dying, input is frozen (no moving / no field / no charging); only gravity remains.
 ///
-/// 交互提示：操作模式下 Interactor 被冻结，无法提供焦点。本组件把每帧算出的
-/// "当前贴近的交互物"通过 NearestInteractable 暴露出去，InteractionPrompt 会在没有
-/// 任何 Interactor 持有控制权时回退读取它 —— 判定条件与按 F 完全一致，
-/// 提示亮起 = 这一刻按 F 一定有效。
+/// Interaction prompt: in Operation Mode the Interactor is frozen and cannot provide focus. This component exposes
+/// the per-frame "currently nearby interactable" via NearestInteractable, and InteractionPrompt falls back to it
+/// when no Interactor holds control -- the condition is identical to pressing F,
+/// so prompt shown = pressing F right now will definitely work.
 ///
-/// 平时禁用；由 OperationModeController 进入操作模式时启用、退出时禁用。
+/// Disabled normally; OperationModeController enables it on entering Operation Mode and disables it on exit.
 /// </summary>
 [RequireComponent(typeof(CharacterController))]
 public class RobotConsoleMover : MonoBehaviour
 {
-    [Header("移动（速度默认取同物体 RobotController，保持一致）")]
+    [Header("Movement (speeds default to the RobotController on the same object, to stay consistent)")]
     public KeyCode runKey = KeyCode.LeftShift;
-    [Tooltip("找不到 RobotController 时的备用走速")]
+    [Tooltip("Fallback walk speed when no RobotController is found")]
     public float fallbackWalkSpeed = 4f;
-    [Tooltip("找不到 RobotController 时的备用跑速")]
+    [Tooltip("Fallback run speed when no RobotController is found")]
     public float fallbackRunSpeed = 6f;
 
-    [Header("跳跃（参数取自同物体 RobotController，保持一致）")]
-    [Tooltip("操作模式下是否允许跳跃。再叠加 RobotController.canJump 一起判定")]
+    [Header("Jump (parameters from the RobotController on the same object, to stay consistent)")]
+    [Tooltip("Whether jumping is allowed in Operation Mode. Combined with RobotController.canJump")]
     public bool allowJump = true;
-    [Tooltip("找不到 RobotController 时的备用跳跃高度")]
+    [Tooltip("Fallback jump height when no RobotController is found")]
     public float fallbackJumpHeight = 1.2f;
-    [Tooltip("离开地面后仍允许起跳的宽限时间（土狼时间）")]
+    [Tooltip("Grace period after leaving the ground during which jumping is still allowed (coyote time)")]
     public float coyoteTime = 0.1f;
-    [Tooltip("落地前提前按跳的缓冲时间")]
+    [Tooltip("Buffer time for pressing jump just before landing")]
     public float jumpBufferTime = 0.1f;
 
-    [Header("开领域")]
-    [Tooltip("开 / 关领域的键；留 None 则跟随 RobotController 的 fieldKey")]
+    [Header("Field")]
+    [Tooltip("Key to toggle the field; leave None to follow RobotController's fieldKey")]
     public KeyCode fieldKeyOverride = KeyCode.None;
 
-    [Header("交互（操作模式下按此键：充电桩=充电，其它=触发）")]
+    [Header("Interaction (press this key in Operation Mode: charging dock = charge, others = trigger)")]
     public KeyCode chargeKey = KeyCode.F;
-    [Tooltip("多近算\"在交互物旁\"（纯距离，上帝视角无需对准）。\n交互提示也用这个范围，两者永远一致")]
+    [Tooltip("How close counts as \"next to an interactable\" (distance only, no aiming in god view).\nThe interaction prompt uses this same range, so they always agree")]
     public float chargeRange = 3f;
 
-    [Header("朝向鼠标")]
-    [Tooltip("操作模式下机器人始终面朝鼠标（只转 Y 轴）")]
+    [Header("Face Mouse")]
+    [Tooltip("In Operation Mode the robot always faces the mouse (Y axis only)")]
     public bool faceMouse = true;
-    [Tooltip("转向速度（度/秒）；0 或负 = 瞬间对准")]
+    [Tooltip("Turn speed (deg/s); 0 or negative = snap instantly")]
     public float turnSpeed = 720f;
-    [Tooltip("求鼠标落点用的相机；留空取 Camera.main")]
+    [Tooltip("Camera used to find the mouse point; leave empty to use Camera.main")]
     public Camera aimCamera;
 
-    [Header("重力（保持贴地）")]
+    [Header("Gravity (keep grounded)")]
     public float gravity = -25f;
 
-    [Header("调试（运行时只读）")]
-    [Tooltip("当前贴近的交互物（= 提示 UI 会显示的那个）")]
-    [SerializeField] private string nearestDockReadout = "(无)";
+    [Header("Debug (read-only at runtime)")]
+    [Tooltip("Currently nearby interactable (= the one the prompt UI shows)")]
+    [SerializeField] private string nearestDockReadout = "(none)";
     [SerializeField] private bool chargingReadout;
 
     private CharacterController controller;
@@ -70,22 +70,22 @@ public class RobotConsoleMover : MonoBehaviour
     private float verticalVelocity;
     private float lastGroundedTime = -99f;
     private float lastJumpPressedTime = -99f;
-    private Interactor robotInteractor;         // 本机器人自己的 Interactor（冻结中，只借它的身份传给 OnInteract）
-    private ChargingDock chargingFrom;          // 当前正在从哪个充电桩充电
-    private InteractableBase nearestInteractable;   // 本帧算出的最近交互物（供提示 UI 读）
-    private InteractableBase focused;               // 已对其调用过 OnFocusEnter 的非充电桩交互物
+    private Interactor robotInteractor;         // This robot's own Interactor (frozen; only borrowed as identity for OnInteract)
+    private ChargingDock chargingFrom;          // Charging dock currently charging from
+    private InteractableBase nearestInteractable;   // Nearest interactable computed this frame (read by the prompt UI)
+    private InteractableBase focused;               // Non-dock interactable we've called OnFocusEnter on
     private ChargingDock nearestDock => nearestInteractable as ChargingDock;
 
     /// <summary>
-    /// 当前贴近、按 F 即可交互的物体（没有则 null）。充电桩 / 终点 / 任何机器人可用的 InteractableBase。
-    /// 本组件被禁用或机器人死亡中时恒为 null，提示不会残留。
+    /// Object nearby that can be interacted with by pressing F (null if none). Charging dock / goal / any robot-usable InteractableBase.
+    /// Always null while this component is disabled or the robot is dying, so no prompt lingers.
     /// </summary>
     public InteractableBase NearestInteractable => isActiveAndEnabled ? nearestInteractable : null;
 
-    /// <summary>兼容旧调用：当前贴近的充电桩（不是充电桩则 null）</summary>
+    /// <summary>Legacy compatibility: currently nearby charging dock (null if not a dock)</summary>
     public ChargingDock NearestDock => isActiveAndEnabled ? nearestDock : null;
 
-    /// <summary>是否正在充电中</summary>
+    /// <summary>Whether currently charging</summary>
     public bool IsCharging => chargingFrom != null;
 
     private void Awake()
@@ -110,47 +110,47 @@ public class RobotConsoleMover : MonoBehaviour
         verticalVelocity = 0f;
         chargingFrom = null;
         ClearFocus();
-        nearestInteractable = null;      // 退出操作模式时清掉，避免提示卡住
-        nearestDockReadout = "(无)";
+        nearestInteractable = null;      // Clear on exiting Operation Mode so the prompt doesn't get stuck
+        nearestDockReadout = "(none)";
         chargingReadout = false;
     }
 
     private void Update()
     {
-        // 死亡中：冻结输入，并且【不再自己施加重力】。
-        // 死亡 / 传送由 CharacterDeathHandler 独占（与 PassiveFall 的约定一致）；
-        // 若这里继续累积 verticalVelocity，复活传送后会带着几十 m/s 的下坠速度落地，
-        // 可能一帧内穿透复活平台再次坠落，表现成"死了一次之后就再也死不掉"。
+        // Dying: freeze input, and [do NOT apply gravity ourselves].
+        // Death / teleport is owned exclusively by CharacterDeathHandler (same convention as PassiveFall);
+        // if we kept accumulating verticalVelocity here, after the respawn teleport we'd land at tens of m/s,
+        // possibly tunneling through the respawn platform in one frame and falling again -- looking like "after dying once it can never die again".
         if (deathHandler != null && deathHandler.IsDying)
         {
             chargingFrom = null;
             ClearFocus();
-            nearestInteractable = null;  // 死亡中不提示
-            nearestDockReadout = "(死亡中)";
+            nearestInteractable = null;  // No prompt while dying
+            nearestDockReadout = "(dying)";
             chargingReadout = false;
             verticalVelocity = 0f;
             lastJumpPressedTime = -99f;
             return;
         }
 
-        // —— 移动：速度与 RobotController 一致，Shift 加速 ——
+        // -- Movement: speed matches RobotController, Shift to run --
         float walk = robotController != null ? robotController.walkSpeed : fallbackWalkSpeed;
         float run  = robotController != null ? robotController.runSpeed  : fallbackRunSpeed;
         float speed = Input.GetKey(runKey) ? run : walk;
 
         float v = Input.GetAxisRaw("Vertical");    // W=+1, S=-1
         float h = Input.GetAxisRaw("Horizontal");  // D=+1, A=-1
-        Vector3 dir = new Vector3(v, 0f, -h);      // W/S → X，A/D → Z（A 为 +Z 所以取 -h）
+        Vector3 dir = new Vector3(v, 0f, -h);      // W/S → X, A/D → Z (A is +Z, hence -h)
         if (dir.sqrMagnitude > 1f) dir.Normalize();
 
-        // —— 地面检测：与 CharacterMotorBase 同一套（有 groundCheck 用球检，否则退回 CC） ——
+        // -- Ground check: same as CharacterMotorBase (sphere check if groundCheck exists, else fall back to CC) --
         bool grounded = CheckGrounded();
         if (grounded) lastGroundedTime = Time.time;
 
-        // —— 跳跃输入：沿用 Input Manager 的 "Jump"，与非操作模式同一个键 ——
+        // -- Jump input: uses Input Manager "Jump", same key as non-Operation Mode --
         if (CanJumpNow && Input.GetButtonDown("Jump")) lastJumpPressedTime = Time.time;
 
-        // —— 重力 + 跳跃（土狼时间 / 跳跃缓冲，手感对齐 CharacterMotorBase） ——
+        // -- Gravity + jump (coyote time / jump buffer, feel matches CharacterMotorBase) --
         if (grounded && verticalVelocity < 0f) verticalVelocity = -2f;
 
         bool coyoteOk = Time.time - lastGroundedTime <= coyoteTime;
@@ -168,23 +168,23 @@ public class RobotConsoleMover : MonoBehaviour
         Vector3 velocity = dir * speed + Vector3.up * verticalVelocity;
         controller.Move(velocity * Time.deltaTime);
 
-        // —— 开 / 关领域：E ——
+        // -- Toggle field: E --
         KeyCode fk = fieldKeyOverride != KeyCode.None
             ? fieldKeyOverride
             : (robotController != null ? robotController.fieldKey : KeyCode.E);
         if (Input.GetKeyDown(fk)) fieldEmitter?.ToggleField();
 
-        // —— 朝向鼠标（只转 Y 轴） ——
+        // -- Face mouse (Y axis only) --
         if (faceMouse) FaceMouse();
 
-        // —— 充电桩：附近有充电桩时按 F 充电（纯距离判定） ——
+        // -- Charging dock: press F to charge when one is nearby (distance check only) --
         HandleCharging();
     }
 
-    /// 是否允许跳跃：本组件开关 + RobotController.canJump 双重判定
+    /// Whether jumping is allowed: this component's toggle + RobotController.canJump
     private bool CanJumpNow => allowJump && (robotController == null || robotController.canJump);
 
-    /// 地面检测。RobotController 配了 groundCheck 就用它，保证和非操作模式判定一致
+    /// Ground check. Uses RobotController's groundCheck if set, to match non-Operation Mode
     private bool CheckGrounded()
     {
         if (robotController != null && robotController.groundCheck != null)
@@ -196,7 +196,7 @@ public class RobotConsoleMover : MonoBehaviour
         return controller.isGrounded;
     }
 
-    // 求鼠标在机器人所在水平面上的落点，机器人朝那个点（只转 Y）
+    // Find the mouse point on the robot's horizontal plane and face it (Y only)
     private void FaceMouse()
     {
         Camera c = aimCamera != null ? aimCamera : Camera.main;
@@ -204,14 +204,14 @@ public class RobotConsoleMover : MonoBehaviour
 
         Ray ray = c.ScreenPointToRay(Input.mousePosition);
 
-        // 与机器人所在水平面（法线朝上、过机器人）求交
+        // Intersect with the horizontal plane through the robot (normal up)
         Plane plane = new Plane(Vector3.up, transform.position);
         if (!plane.Raycast(ray, out float enter)) return;
 
         Vector3 hit = ray.GetPoint(enter);
         Vector3 look = hit - transform.position;
         look.y = 0f;
-        if (look.sqrMagnitude < 0.0001f) return;   // 鼠标几乎压在自己身上，跳过
+        if (look.sqrMagnitude < 0.0001f) return;   // Mouse is almost on top of us, skip
 
         Quaternion target = Quaternion.LookRotation(look.normalized, Vector3.up);
         transform.rotation = turnSpeed > 0f
@@ -221,11 +221,11 @@ public class RobotConsoleMover : MonoBehaviour
 
     private void HandleCharging()
     {
-        // 每帧算一次，同时供"按 F"和"交互提示"使用 —— 单一数据源，两者不可能不同步
+        // Computed once per frame, used by both "press F" and "interaction prompt" -- single source of truth, they can't desync
         nearestInteractable = FindNearestInteractable();
         var dock = nearestDock;
 
-        // —— 非充电桩的交互物（终点等）：维护焦点，让 IsFocused / 子类逻辑和正常模式一致 ——
+        // -- Non-dock interactables (goal etc.): maintain focus so IsFocused / subclass logic matches normal mode --
         var other = dock == null ? nearestInteractable : null;
         if (other != focused)
         {
@@ -240,19 +240,19 @@ public class RobotConsoleMover : MonoBehaviour
         if (Input.GetKeyDown(chargeKey))
         {
             if (dock != null)
-                chargingFrom = dock;                       // 充电桩：进入持续充电
+                chargingFrom = dock;                       // Charging dock: start continuous charging
             else if (focused != null && robotInteractor != null)
-                focused.OnInteract(robotInteractor);      // 其它：一次性触发（LevelGoal → 胜利）
+                focused.OnInteract(robotInteractor);      // Others: one-shot trigger (LevelGoal → victory)
         }
 
         if (chargingFrom != null)
         {
-            // 走开了 / 没电池 / 已充满 → 停止
+            // Walked away / no battery / fully charged → stop
             if (dock != chargingFrom || energySystem == null) chargingFrom = null;
             else if (!chargingFrom.ChargeDirect(energySystem)) chargingFrom = null;
         }
 
-        nearestDockReadout = nearestInteractable != null ? nearestInteractable.name : "(无)";
+        nearestDockReadout = nearestInteractable != null ? nearestInteractable.name : "(none)";
         chargingReadout = chargingFrom != null;
     }
 
@@ -262,7 +262,7 @@ public class RobotConsoleMover : MonoBehaviour
         focused = null;
     }
 
-    // 纯距离找最近的、机器人可用的交互物（无需相机对准）
+    // Find the nearest robot-usable interactable by distance only (no camera aiming needed)
     private InteractableBase FindNearestInteractable()
     {
         var list = InteractableBase.All;

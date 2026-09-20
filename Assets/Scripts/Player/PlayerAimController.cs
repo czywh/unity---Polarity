@@ -1,56 +1,56 @@
 using UnityEngine;
 
 /// <summary>
-/// PLAYER（瞄准）　玩家第三人称瞄准控制器，逻辑与 RobotAimController 一致：
-///  · 右键切换「瞄准 / 移动」；瞄准时相机平缓绕到身后再拉近、屏幕中央十字准星、
-///    角色朝向随相机（准星方向）。
-///  · 只在控制玩家时生效，切走玩家自动退出瞄准。
+/// PLAYER (Aim)  Player third-person aim controller, same logic as RobotAimController:
+///  - Right-click toggles "Aim / Move"; when aiming, the camera smoothly swings behind and zooms in, a crosshair appears at screen center,
+///    and the character faces along the camera (crosshair direction).
+///  - Only active while controlling the player; switching away from the player exits aim automatically.
 ///
-/// 与机器人不同：玩家不发射导弹，而是持续记录准星对准的【第一个物体】(AimedTarget)，
-/// 供后续逻辑处理（当前只做检测 + 调试显示，不对物体做任何操作）。
+/// Unlike the robot: the player doesn't fire missiles, but continuously records [the first object] under the crosshair (AimedTarget)
+/// for later logic (currently detection + debug display only; nothing is done to the object).
 ///
-/// 建议加进 CharacterSwitcher 的 playerControlScripts。
-/// 前提：相机用 OrbitFollowCamera，且 holdRightMouseToRotate 取消勾选。
+/// Recommended to add to CharacterSwitcher's playerControlScripts.
+/// Requirement: camera uses OrbitFollowCamera with holdRightMouseToRotate unchecked.
 /// </summary>
 [RequireComponent(typeof(PlayerController))]
 public class PlayerAimController : MonoBehaviour
 {
-    [Header("引用（留空自动获取）")]
+    [Header("References (empty = auto-fetch)")]
     public OrbitFollowCamera cam;
 
-    [Header("瞄准射线")]
-    [Tooltip("准星命中检测层；之后可缩到只含需要处理的物体")]
+    [Header("Aim Ray")]
+    [Tooltip("Crosshair hit-detection layers; can later be narrowed to only objects that need handling")]
     public LayerMask aimMask = ~0;
     public float maxAimDistance = 1000f;
 
-    [Header("放电（对准电子实体按住左键 = 放电）")]
-    [Tooltip("每秒放电量（设计单位/秒，与物体电量同单位）")]
+    [Header("Discharge (aim at an electric entity and hold left mouse = discharge)")]
+    [Tooltip("Discharge per second (design units/sec, same units as object energy)")]
     public float dischargeRate = 50f;
 
-    [Header("十字准星（可选，留空用内置简易准星）")]
+    [Header("Crosshair (optional; empty = built-in simple crosshair)")]
     public GameObject crosshair;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (runtime read-only)")]
     [SerializeField] private bool aiming;
-    [Tooltip("当前是否正在对准物体放电（按住左键且对准可放电实体）")]
+    [Tooltip("Whether currently discharging an object (left mouse held and aimed at a dischargeable entity)")]
     [SerializeField] private bool discharging;
-    [Tooltip("当前准星对准的第一个物体名字")]
-    [SerializeField] private string aimedTargetName = "(无)";
+    [Tooltip("Name of the first object currently under the crosshair")]
+    [SerializeField] private string aimedTargetName = "(none)";
 
     private PlayerController player;
     private Camera cameraComp;
 
     public bool IsAiming { get; private set; }
 
-    // —— 供后续处理：当前准星对准的第一个物体 ——
+    // -- For later handling: the first object currently under the crosshair --
     public Transform AimedTarget { get; private set; }
     public bool HasAimHit { get; private set; }
     public RaycastHit LastHit { get; private set; }
-    // 当前对准的电子实体（用于放电），没有则 null
+    // Electric entity currently aimed at (for discharge); null if none
     public ElectricEntity AimedEntity { get; private set; }
-    // 当前对准的敌人电量（用于吸电），没有则 null
+    // Enemy energy currently aimed at (for draining); null if none
     public EnergySystem AimedEnemyEnergy { get; private set; }
-    // 放电锁定目标：按住左键期间即使射线脱离也继续吸的对象
+    // Discharge lock target: keeps draining while left mouse is held even if the ray leaves it
     private ElectricEntity dischargeTarget;
     private EnergySystem dischargeEnemyEnergy;
 
@@ -65,30 +65,30 @@ public class PlayerAimController : MonoBehaviour
 
     private void Update()
     {
-        // 只有"控制玩家"时才允许瞄准；切走（PlayerController 被禁用）则强制退出、忽略输入
+        // Aiming only allowed while "controlling the player"; when switched away (PlayerController disabled) force exit and ignore input
         if (player == null || !player.enabled)
         {
             if (IsAiming) SetAiming(false);
             return;
         }
 
-        // 右键切换瞄准 / 移动
-        if (Input.GetMouseButtonDown(1)) SetAiming(!IsAiming);
+        // Right-click toggles aim / move -- unless the player is carrying an Energy Relay (hands are full; press F to place it first)
+        if (Input.GetMouseButtonDown(1) && EnergyRelay.CarriedRelay == null) SetAiming(!IsAiming);
 
         if (!IsAiming) { ClearTarget(); return; }
 
-        // 每帧刷新准星对准的第一个物体
+        // Refresh the first object under the crosshair each frame
         UpdateAimTarget();
 
-        // 放电：按住左键期间锁定一个可放电目标，持续吸到 Min Energy 或松手为止。
-        // 锁定不限于按下那一帧——握着把准星扫到目标上也能锁；锁定后即使目标跌破阈值、
-        // 碰撞关闭（射线打不到了）也继续吸，直到吸满或松手。
+        // Discharge: while left mouse is held, lock one dischargeable target and keep draining until Min Energy or release.
+        // Locking isn't limited to the press frame -- sweeping the crosshair onto a target while holding also locks; once locked, even if the target drops below threshold
+        // or its collision turns off (ray can't hit it), keep draining until full or released.
         if (Input.GetMouseButton(0))
         {
             if (dischargeTarget == null && AimedEntity != null && AimedEntity.CanDischarge)
                 dischargeTarget = AimedEntity;
 
-            // 敌人电量：锁定后持续吸（同样握住扫到就锁）
+            // Enemy energy: keep draining once locked (likewise, sweep while holding to lock)
             if (dischargeEnemyEnergy == null && AimedEnemyEnergy != null)
                 dischargeEnemyEnergy = AimedEnemyEnergy;
 
@@ -109,13 +109,19 @@ public class PlayerAimController : MonoBehaviour
 
     private void LateUpdate()
     {
-        // 相机转到位后，角色朝向才跟随相机（避免进入瞄准的转向过程中角色被带着摆动）
+        // Only after the camera settles does the character face along the camera (avoids the character swinging during the aim-in turn)
         if (IsAiming && cam != null && cam.AimReady)
         {
             Vector3 f = cam.AimForward;
             if (f.sqrMagnitude > 0.0001f)
                 transform.rotation = Quaternion.LookRotation(f, Vector3.up);
         }
+    }
+
+    /// <summary>Leave aim mode from outside (e.g. when the player picks up an Energy Relay)</summary>
+    public void ExitAim()
+    {
+        if (IsAiming) SetAiming(false);
     }
 
     private void SetAiming(bool on)
@@ -125,7 +131,7 @@ public class PlayerAimController : MonoBehaviour
 
         if (cam != null)
         {
-            if (on) cam.BeginAim(transform.eulerAngles.y);   // 平缓转到身后，不吸附
+            if (on) cam.BeginAim(transform.eulerAngles.y);   // smoothly swing behind, no snapping
             else cam.EndAim();
         }
         if (crosshair != null) crosshair.SetActive(on);
@@ -133,25 +139,25 @@ public class PlayerAimController : MonoBehaviour
         if (!on)
         {
             ClearTarget();
-            dischargeTarget = null;   // 退出瞄准释放放电锁定
+            dischargeTarget = null;   // exiting aim releases the discharge lock
             dischargeEnemyEnergy = null;
         }
     }
 
-    // 从屏幕中央射线求"对准的第一个物体"
+    // Raycast from screen center to find "the first object aimed at"
     private void UpdateAimTarget()
     {
         if (cameraComp == null) { ClearTarget(); return; }
 
         Ray ray = cameraComp.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
-        // 命中 Trigger：这样跌破阈值变 Trigger（可穿过）的电子实体仍能被选中继续吸电
+        // Hit Triggers too: electric entities that turn into Triggers (passable) below threshold can still be selected to keep draining
         if (Physics.Raycast(ray, out RaycastHit hit, maxAimDistance, aimMask, QueryTriggerInteraction.Collide))
         {
             HasAimHit = true;
             LastHit = hit;
             AimedTarget = hit.transform;
             AimedEntity = hit.transform.GetComponentInParent<ElectricEntity>();
-            // 只把"敌人"(带 EnemyChaser)的 EnergySystem 当作可吸电目标，避免误吸机器人自己
+            // Only treat "enemies" (with EnemyChaser) EnergySystem as drain targets, to avoid draining the robot itself
             var enemy = hit.transform.GetComponentInParent<EnemyChaser>();
             AimedEnemyEnergy = enemy != null ? enemy.GetComponent<EnergySystem>() : null;
             aimedTargetName = hit.transform.name;
@@ -168,13 +174,13 @@ public class PlayerAimController : MonoBehaviour
         AimedTarget = null;
         AimedEntity = null;
         AimedEnemyEnergy = null;
-        aimedTargetName = "(无)";
+        aimedTargetName = "(none)";
         discharging = false;
     }
 
     private void OnDisable()
     {
-        // 切走玩家 → 退出瞄准并复位相机（光标由 CharacterSwitcher 统一管，这里不碰）
+        // Switched away from player → exit aim and reset camera (cursor is managed by CharacterSwitcher, not touched here)
         if (IsAiming)
         {
             IsAiming = false;
@@ -185,7 +191,7 @@ public class PlayerAimController : MonoBehaviour
         }
     }
 
-    // 内置简易十字准星（未指定 crosshair 时用）
+    // Built-in simple crosshair (used when crosshair is not assigned)
     private void OnGUI()
     {
         if (!IsAiming || crosshair != null) return;

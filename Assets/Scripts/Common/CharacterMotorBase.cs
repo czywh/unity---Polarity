@@ -1,63 +1,63 @@
 using UnityEngine;
 
 /// <summary>
-/// 角色移动内核基类：玩家与机器人共用的"怎么动"。
+/// Character movement core base class: the shared "how to move" for player and robot.
 ///
-/// 包含：相机相对移动 + 平滑转向到移动方向 + 重力 + 土狼时间/跳跃缓冲 + 统一地面检测，
-/// 以及一组对外只读状态（供动画 / 视觉表现读取）。
+/// Includes: camera-relative movement + smooth turning toward move direction + gravity + coyote time/jump buffer + unified ground check,
+/// plus a set of public read-only state (for animation / visuals to read).
 ///
-/// 子类只需：① 在各自 Header 下声明速度/跳跃参数，并用抽象属性把它们喂进来；
-///          ② 需要额外输入（如机器人能力键）时重写 HandleExtraInput()。
-/// 控制权交接：由 CharacterSwitcher 启用 / 禁用子类组件。
+/// Subclasses only need to: (1) declare speed/jump params under their own Headers and feed them in via abstract properties;
+///          (2) override HandleExtraInput() when extra input is needed (e.g. robot ability keys).
+/// Control handoff: CharacterSwitcher enables / disables the subclass components.
 /// </summary>
 [RequireComponent(typeof(CharacterController))]
 public abstract class CharacterMotorBase : MonoBehaviour
 {
-    [Header("转向")]
+    [Header("Turning")]
     public float turnSmoothTime = 0.1f;
 
-    [Header("重力 / 跳跃手感")]
+    [Header("Gravity / Jump Feel")]
     public float gravity = -25f;
-    [Tooltip("离开地面后仍允许起跳的宽限时间（土狼时间）")]
+    [Tooltip("Grace time after leaving the ground during which jumping is still allowed (coyote time)")]
     public float coyoteTime = 0.1f;
-    [Tooltip("落地前提前按跳的缓冲时间")]
+    [Tooltip("Buffer time for pressing jump just before landing")]
     public float jumpBufferTime = 0.1f;
 
-    [Header("地面检测")]
-    [Tooltip("脚底的空物体；留空则退回用 CharacterController.isGrounded")]
+    [Header("Ground Check")]
+    [Tooltip("Empty object at the feet; falls back to CharacterController.isGrounded if empty")]
     public Transform groundCheck;
     public float groundCheckRadius = 0.2f;
     public LayerMask groundMask = ~0;
 
-    [Header("相机")]
-    [Tooltip("决定移动方向的相机；留空自动用 Camera.main")]
+    [Header("Camera")]
+    [Tooltip("Camera that determines move direction; uses Camera.main if empty")]
     public Transform cameraTransform;
 
-    [Header("运行时锁")]
-    [Tooltip("交互 / 过场时置 true：冻结水平移动，但仍受重力贴地")]
+    [Header("Runtime Lock")]
+    [Tooltip("Set true during interactions / cutscenes: freezes horizontal movement but still applies gravity")]
     public bool motionLocked = false;
 
-    [Header("幽灵态（进入影响重力的电子领域时免重力悬浮）")]
-    [Tooltip("悬浮时上升 / 下降速度")]
+    [Header("Phantom State (gravity-free hover inside gravity-affecting electric fields)")]
+    [Tooltip("Rise / descend speed while hovering")]
     public float phantomVerticalSpeed = 4f;
-    [Tooltip("上升键")]
+    [Tooltip("Rise key")]
     public KeyCode phantomUpKey = KeyCode.Space;
-    [Tooltip("下降键")]
+    [Tooltip("Descend key")]
     public KeyCode phantomDownKey = KeyCode.LeftControl;
 
-    // 子类决定是否具备幽灵态能力（玩家 true，机器人 false）
+    // Subclass decides whether it has the phantom state ability (player true, robot false)
     protected virtual bool CanPhantom => false;
-    // 当前是否处于幽灵态（在影响重力的领域内）
+    // Whether currently in phantom state (inside a gravity-affecting field)
     public bool InPhantom { get; private set; }
 
-    // —— 子类提供的参数（基类只读取，不持有具体字段）——
+    // -- Params provided by subclasses (base only reads them, holds no concrete fields) --
     protected abstract float WalkSpeed { get; }
     protected abstract float RunSpeed { get; }
     protected abstract float JumpHeight { get; }
-    protected abstract bool CanRunNow { get; }   // 是否允许奔跑（玩家恒 true，机器人看 canRun）
-    protected abstract bool CanJumpNow { get; }  // 是否允许跳跃
+    protected abstract bool CanRunNow { get; }   // Whether running is allowed (player always true, robot depends on canRun)
+    protected abstract bool CanJumpNow { get; }  // Whether jumping is allowed
 
-    // —— 对外只读状态 ——
+    // -- Public read-only state --
     public bool IsGrounded { get; private set; }
     public bool IsRunning { get; private set; }
     public bool IsMoving { get; private set; }
@@ -65,7 +65,7 @@ public abstract class CharacterMotorBase : MonoBehaviour
     public float MaxSpeed => RunSpeed;
     public float VerticalVelocity => verticalVelocity;
 
-    /// 起跳成功的那一帧触发（供动画播放跳跃、音效等订阅）
+    /// Fired on the frame a jump succeeds (subscribe to play jump animation, sound, etc.)
     public event System.Action Jumped;
 
     protected CharacterController controller;
@@ -89,12 +89,12 @@ public abstract class CharacterMotorBase : MonoBehaviour
     {
         UpdateGrounded();
 
-        // 幽灵态判定：具备能力 且 处于"影响重力的领域"内
+        // Phantom state check: has the ability AND is inside a "gravity-affecting field"
         InPhantom = CanPhantom
             && ElectricFieldManager.Instance != null
             && ElectricFieldManager.Instance.IsInsidePhantomField(transform.position);
 
-        // —— 输入集中读取：之后接 InputManager 只改这一段 ——
+        // -- Centralized input reading: hooking up an InputManager later only changes this block --
         float inputX = Input.GetAxisRaw("Horizontal");
         float inputZ = Input.GetAxisRaw("Vertical");
         bool runHeld = CanRunNow && Input.GetKey(KeyCode.LeftShift);
@@ -119,11 +119,11 @@ public abstract class CharacterMotorBase : MonoBehaviour
         PlanarSpeed = new Vector3(planar.x, 0f, planar.z).magnitude;
         IsMoving = PlanarSpeed > 0.05f;
 
-        // 子类专属输入（机器人能力键等）。基类不关心具体内容。
+        // Subclass-specific input (robot ability keys etc.). The base doesn't care what it is.
         HandleExtraInput();
     }
 
-    /// 相机相对方向 + 平滑转向到移动方向，返回这一帧的水平速度向量
+    /// Camera-relative direction + smooth turn toward move direction; returns this frame's horizontal velocity
     private Vector3 MoveHorizontal(float inputX, float inputZ, bool runHeld)
     {
         Vector3 input = new Vector3(inputX, 0f, inputZ);
@@ -150,14 +150,14 @@ public abstract class CharacterMotorBase : MonoBehaviour
 
     private void ApplyGravityAndJump()
     {
-        // 幽灵态：免重力，Space 上升 / Ctrl 下降，直接控速
+        // Phantom state: no gravity, Space to rise / Ctrl to descend, speed controlled directly
         if (InPhantom)
         {
             float v = 0f;
             if (Input.GetKey(phantomUpKey)) v += phantomVerticalSpeed;
             if (Input.GetKey(phantomDownKey)) v -= phantomVerticalSpeed;
             verticalVelocity = v;
-            lastJumpPressedTime = -99f;   // 清掉跳跃缓冲，避免退出幽灵态时误跳
+            lastJumpPressedTime = -99f;   // Clear jump buffer to avoid an accidental jump when leaving phantom state
             return;
         }
 
@@ -188,14 +188,14 @@ public abstract class CharacterMotorBase : MonoBehaviour
         if (IsGrounded) lastGroundedTime = Time.time;
     }
 
-    /// 子类重写以处理自己的额外输入（默认什么都不做）
+    /// Subclasses override to handle their own extra input (does nothing by default)
     protected virtual void HandleExtraInput() { }
 
-    /// 切走（禁用）时清理速度，避免切回来还带着旧的下坠速度
+    /// Clear velocity when switched away (disabled), so switching back doesn't carry old fall speed
     protected virtual void OnDisable()
     {
         verticalVelocity = 0f;
-        PlanarSpeed = 0f;   // 切走时归零，避免动画卡在行走
+        PlanarSpeed = 0f;   // Reset on switch-away so the animation doesn't stick in walking
         IsMoving = false;
         IsRunning = false;
     }

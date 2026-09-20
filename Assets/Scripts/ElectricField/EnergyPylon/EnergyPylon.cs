@@ -2,26 +2,26 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// PROP　吸电桩：能量中枢。任意领域覆盖它时充电（机器人 E 领域、导弹领域都算——都是 ElectricField）。
+/// PROP Energy pylon: energy hub. Charges whenever any field covers it (robot E field and missile fields both count -- both are ElectricField).
 ///
-/// 它把自己的电量【百分比】转接给绑定的一个或多个可交互物（电子桥等）：
-///   吸电桩百分比 f  →  每座绑定桥的电量 = f × 该桥自己的 maxEnergy
-/// 于是每座桥仍用各自的 maxEnergy / interactThreshold，能在不同充电进度依次激活。
+/// It relays its energy [fraction] to one or more bound interactables (electric bridges etc.):
+///   Pylon fraction f  →  each bound bridge's energy = f × that bridge's own maxEnergy
+/// So each bridge still uses its own maxEnergy / interactThreshold and can activate at different charge levels in turn.
 ///
-/// 绑定的桥被自动标记为 externallyDriven：它们不再自行充放电、不直接响应领域，
-/// 一切经由吸电桩转接。玩家 / 机器人只需对吸电桩操作。
+/// Bound bridges are automatically marked externallyDriven: they no longer charge/discharge themselves or respond to fields directly;
+/// everything is relayed through the pylon. The player / robot only needs to act on the pylon.
 /// </summary>
 public class EnergyPylon : ElectricEntity
 {
-    [Header("吸电桩：绑定的可交互物")]
-    [Tooltip("绑定的电子桥 / 电子实体：它们改由本桩电量百分比驱动，不再自行充放电")]
+    [Header("Energy Pylon: Bound Interactables")]
+    [Tooltip("Bound electric bridges / electric entities: driven by this pylon's energy fraction instead of charging/discharging themselves")]
     [SerializeField] private List<ElectricEntity> boundEntities = new List<ElectricEntity>();
 
     protected override void Awake()
     {
         base.Awake();
-        applyColorGradient = false;   // 吸电桩恒不渐变（兜底已有实例里残留的 true）
-        // 绑定的实体交由本桩驱动：标记 externallyDriven，让它们跳过自身充放电 / 领域响应
+        applyColorGradient = false;   // Pylons never use the gradient (safety net for leftover true on existing instances)
+        // Bound entities are driven by this pylon: mark externallyDriven so they skip their own charge/discharge / field response
         for (int i = 0; i < boundEntities.Count; i++)
             if (boundEntities[i] != null && boundEntities[i] != this)
                 boundEntities[i].externallyDriven = true;
@@ -30,13 +30,13 @@ public class EnergyPylon : ElectricEntity
     protected override void Start()
     {
         base.Start();
-        PushToBound();   // 初始对齐一次
+        PushToBound();   // Sync once initially
     }
 
     protected override void LateUpdate()
     {
-        base.LateUpdate();   // 电量镜像调试字段
-        PushToBound();       // 把本桩电量百分比推送给所有绑定实体
+        base.LateUpdate();   // Energy mirror debug fields
+        PushToBound();       // Push this pylon's energy fraction to all bound entities
     }
 
     private void PushToBound()
@@ -49,12 +49,12 @@ public class EnergyPylon : ElectricEntity
 
     private void Reset()
     {
-        energyMode = ElectricEnergyMode.ChargeOnly;    // 靠领域充电（E 领域 / 导弹领域）
-        outsideBehavior = OutsideBehavior.None;        // 默认离场保持电量
-        interactThreshold = 0f;                        // 始终"可交互"→碰撞体稳定，便于覆盖判定
+        energyMode = ElectricEnergyMode.ChargeOnly;    // Charged by fields (E field / missile field)
+        outsideBehavior = OutsideBehavior.None;        // By default keep energy after leaving
+        interactThreshold = 0f;                        // Always "interactable" → stable collider, easier coverage checks
         keepAimableWhenPassable = true;
         initialEnergy = 0f;
         chargeRate = 50f;
-        applyColorGradient = false;                    // 吸电桩不需要颜色渐变，保留自身材质
+        applyColorGradient = false;                    // Pylons don't need a color gradient; keep own material
     }
 }

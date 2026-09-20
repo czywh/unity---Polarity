@@ -1,37 +1,37 @@
 using UnityEngine;
 
 /// <summary>
-/// ROBOT-05（瞄准）　机器人第三人称射击瞄准控制器。
+/// ROBOT-05 (Aim) - Robot third-person shooting aim controller.
 ///
-/// 右键切换「瞄准 / 移动」两种模式：
-///  · 瞄准模式：相机贴到机器人身后、屏幕中央十字准星、机器人朝向随鼠标（=相机朝向）、
-///    左键朝准星方向发射导弹。
-///  · 移动模式：恢复原来的环绕相机 + 转向移动方向。
-/// 只有瞄准模式能发射。切走机器人时自动退出瞄准。
+/// Right-click toggles between "Aim / Move" modes:
+///  - Aim mode: camera snaps behind the robot, crosshair at screen center, robot facing follows the mouse (= camera facing),
+///    left-click fires a missile toward the crosshair.
+///  - Move mode: restores the original orbit camera + turning toward movement direction.
+/// Only Aim mode can fire. Automatically exits Aim when switching away from the robot.
 ///
-/// 建议加进 CharacterSwitcher 的 robotControlScripts，使其只在控制机器人时生效。
-/// 前提：相机用 OrbitFollowCamera，且其 holdRightMouseToRotate 取消勾选（右键留给瞄准切换）。
+/// Recommended: add to CharacterSwitcher's robotControlScripts so it only runs while controlling the robot.
+/// Requirement: camera uses OrbitFollowCamera with holdRightMouseToRotate unchecked (right-click is reserved for aim toggle).
 /// </summary>
 [RequireComponent(typeof(RobotController))]
 public class RobotAimController : MonoBehaviour
 {
-    [Header("引用（留空自动获取）")]
+    [Header("References (auto-fetched if empty)")]
     public OrbitFollowCamera cam;
-    [Tooltip("发射口 / 瞄准方向起点；留空用自身")]
+    [Tooltip("Muzzle / aim direction origin; empty = use self")]
     public Transform muzzle;
 
-    [Header("瞄准射线")]
-    [Tooltip("准星命中检测层；建议排除玩家 / 机器人")]
+    [Header("Aim Ray")]
+    [Tooltip("Crosshair hit detection layers; recommended to exclude player / robot")]
     public LayerMask aimMask = ~0;
     public float maxAimDistance = 1000f;
 
-    [Header("十字准星（可选，留空用内置简易准星）")]
+    [Header("Crosshair (optional; empty = use built-in simple crosshair)")]
     public GameObject crosshair;
 
     private IMissileLauncher launcher;
     private Camera cameraComp;
     private Transform muzzleT;
-    private RobotController robot;   // 用其 enabled 判断"当前是否在控制机器人"
+    private RobotController robot;   // Its enabled state tells whether "the robot is currently being controlled"
 
     public bool IsAiming { get; private set; }
 
@@ -48,25 +48,25 @@ public class RobotAimController : MonoBehaviour
 
     private void Update()
     {
-        // 只有"控制机器人"时才允许瞄准 / 发射；切到玩家（RobotController 被禁用）则强制退出、忽略输入
+        // Aim / fire only allowed while "controlling the robot"; when switched to the player (RobotController disabled), force exit and ignore input
         if (robot == null || !robot.enabled)
         {
             if (IsAiming) SetAiming(false);
             return;
         }
 
-        // 右键切换瞄准 / 移动
+        // Right-click toggles Aim / Move
         if (Input.GetMouseButtonDown(1)) SetAiming(!IsAiming);
 
         if (!IsAiming) return;
 
-        // 左键发射（仅瞄准状态）
+        // Left-click fires (Aim state only)
         if (Input.GetMouseButtonDown(0)) Fire();
     }
 
     private void LateUpdate()
     {
-        // 相机转到位后，角色朝向才跟随相机（避免进入瞄准的转向过程中角色被带着摆动）
+        // Character facing follows the camera only after the camera finishes turning (avoids the character swinging during the aim-in turn)
         if (IsAiming && cam != null && cam.AimReady)
         {
             Vector3 f = cam.AimForward;
@@ -81,12 +81,12 @@ public class RobotAimController : MonoBehaviour
 
         if (cam != null)
         {
-            if (on) cam.BeginAim(transform.eulerAngles.y);   // 平缓转到身后，不吸附
+            if (on) cam.BeginAim(transform.eulerAngles.y);   // Smoothly turn to behind, no snapping
             else cam.EndAim();
         }
         if (crosshair != null) crosshair.SetActive(on);
 
-        // 机器人游戏中始终锁定隐藏光标（移动 / 瞄准都只用相机，不需要可见光标）
+        // While playing as the robot the cursor is always locked and hidden (move / aim both only use the camera, no visible cursor needed)
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
@@ -97,7 +97,7 @@ public class RobotAimController : MonoBehaviour
         launcher.TryFire(ComputeAimDirection());
     }
 
-    // 从屏幕中央射线求瞄准点，再算发射方向
+    // Ray from screen center to get the aim point, then compute fire direction
     private Vector3 ComputeAimDirection()
     {
         if (cameraComp == null) return muzzleT.forward;
@@ -113,8 +113,8 @@ public class RobotAimController : MonoBehaviour
 
     private void OnDisable()
     {
-        // 切走机器人 → 退出瞄准状态并复位相机，但不动光标：
-        // 光标交给 CharacterSwitcher 统一设置（玩家=锁定隐藏），避免两处抢
+        // Switching away from the robot -> exit Aim state and reset camera, but leave the cursor alone:
+        // CharacterSwitcher sets the cursor centrally (player = locked hidden), avoiding two places fighting over it
         if (IsAiming)
         {
             IsAiming = false;
@@ -123,7 +123,7 @@ public class RobotAimController : MonoBehaviour
         }
     }
 
-    // 内置简易十字准星（未指定 crosshair 时用）
+    // Built-in simple crosshair (used when no crosshair is assigned)
     private void OnGUI()
     {
         if (!IsAiming || crosshair != null) return;

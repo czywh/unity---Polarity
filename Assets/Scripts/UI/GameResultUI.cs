@@ -3,20 +3,20 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
-/// UI　通关结算面板。用 SCI-FI GUI Pack 的素材在运行时生成，不需要手搭预制体：
-///   · 底：popup_03（9-slice 弹窗，底部青色亮条）
-///   · 标题下横线：title_01（发光线）
-///   · 按钮：btn_01_hover（暗）为常态，btn_01_normal（亮）为悬停/按下 —— SpriteSwap
-///   · 分隔线：img_line_01（9-slice）
-/// 显示：用时 / 死亡次数 / 耗电量，以及 RESTART 与 NEXT LEVEL 两个按钮。
+/// UI - Level-clear results panel. Built at runtime from SCI-FI GUI Pack assets, no hand-built prefab needed:
+///   - Background: popup_03 (9-slice popup, cyan highlight bar at the bottom)
+///   - Line under title: title_01 (glowing line)
+///   - Buttons: btn_01_hover (dark) as normal, btn_01_normal (bright) as hover/pressed -- SpriteSwap
+///   - Divider: img_line_01 (9-slice)
+/// Shows: time / death count / energy used, plus RESTART and NEXT LEVEL buttons.
 ///
-/// 文本用 Legacy UI.Text（内置 Arial，中文可直接显示；字段里的文案随便改成中文）。
-/// 画布 sortingOrder = 100，盖在操作面板 (50) 之上。timeScale = 0 时按钮照常可点（UI 不依赖 deltaTime）。
+/// Text uses Legacy UI.Text (built-in Arial, can display Chinese directly; the text fields can be changed to Chinese freely).
+/// Canvas sortingOrder = 100, above the operation panel (50). Buttons stay clickable when timeScale = 0 (UI doesn't depend on deltaTime).
 /// </summary>
 [DisallowMultipleComponent]
 public class GameResultUI : MonoBehaviour
 {
-    [Header("素材（留空自动从 SCI-FI GUI Pack 的 Resources 加载）")]
+    [Header("Assets (empty = auto-load from SCI-FI GUI Pack's Resources)")]
     public Sprite popupSprite;
     public Sprite titleLineSprite;
     public Sprite dividerSprite;
@@ -25,21 +25,21 @@ public class GameResultUI : MonoBehaviour
     public string popupPath = "Sprites/9sliced/popup_03";
     public string titleLinePath = "Sprites/Title/title_01";
     public string dividerPath = "Sprites/Sliced Elements/img_line_01";
-    public string buttonNormalPath = "Sprites/Button/btn_01_hover";     // 暗底：常态
-    public string buttonHighlightPath = "Sprites/Button/btn_01_normal"; // 亮底：悬停/按下
+    public string buttonNormalPath = "Sprites/Button/btn_01_hover";     // Dark: normal
+    public string buttonHighlightPath = "Sprites/Button/btn_01_normal"; // Bright: hover/pressed
 
-    [Header("文案")]
+    [Header("Text")]
     public string titleText = "MISSION COMPLETE";
     public string timeLabel = "TIME";
     public string playerDeathsLabel = "PLAYER DEATHS";
     public string robotDeathsLabel = "ROBOT DEATHS";
     public string energyLabel = "ENERGY USED";
     public string restartLabel = "RESTART";
-    [Tooltip("由 GameResultManager 在 Show 时决定是 NEXT LEVEL 还是 MAIN MENU；这里是默认值")]
+    [Tooltip("GameResultManager decides NEXT LEVEL or MAIN MENU on Show; this is the default")]
     public string nextLabel = "NEXT LEVEL";
     public string energyUnit = "";
 
-    [Header("样式")]
+    [Header("Style")]
     public Font uiFont;
     public Color textColor = new Color(0.62f, 0.96f, 1f, 1f);
     public Color valueColor = Color.white;
@@ -52,7 +52,7 @@ public class GameResultUI : MonoBehaviour
     public int valueFontSize = 30;
     public int buttonFontSize = 26;
 
-    [Header("调试（运行时只读）")]
+    [Header("Debug (runtime, read-only)")]
     [SerializeField] private bool visible;
 
     public bool Visible => visible;
@@ -68,7 +68,7 @@ public class GameResultUI : MonoBehaviour
         return go.AddComponent<GameResultUI>();
     }
 
-    /// <summary>显示结算。nextButtonLabel 由管理器传入（NEXT LEVEL / MAIN MENU）</summary>
+    /// <summary>Show results. nextButtonLabel is passed in by the manager (NEXT LEVEL / MAIN MENU)</summary>
     public void Show(LevelStats stats, string nextButtonLabel = null)
     {
         EnsureBuilt();
@@ -82,7 +82,7 @@ public class GameResultUI : MonoBehaviour
         root.SetActive(true);
         visible = true;
 
-        // 让手柄 / 键盘也能直接按：默认选中 RESTART
+        // Allow gamepad / keyboard to press directly: RESTART selected by default
         if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(restartBtn.gameObject);
     }
 
@@ -92,9 +92,9 @@ public class GameResultUI : MonoBehaviour
         visible = false;
     }
 
-    // ────────────────────────────────────────────────────────────────
-    //  构建
-    // ────────────────────────────────────────────────────────────────
+    // ----------------------------------------------------------------
+    //  Build
+    // ----------------------------------------------------------------
 
     private void EnsureBuilt()
     {
@@ -114,15 +114,15 @@ public class GameResultUI : MonoBehaviour
         scaler.matchWidthOrHeight = 0.5f;
         cgo.AddComponent<GraphicRaycaster>();
 
-        // 根（全屏遮罩）
+        // Root (full-screen overlay)
         root = new GameObject("Root", typeof(RectTransform));
         root.transform.SetParent(cgo.transform, false);
         Stretch(root.GetComponent<RectTransform>());
         var dim = root.AddComponent<Image>();
         dim.color = dimColor;
-        dim.raycastTarget = true;   // 挡住下面的一切点击
+        dim.raycastTarget = true;   // Block all clicks underneath
 
-        // 弹窗底
+        // Popup background
         var panel = new GameObject("Panel", typeof(RectTransform));
         panel.transform.SetParent(root.transform, false);
         var prt = panel.GetComponent<RectTransform>();
@@ -139,7 +139,7 @@ public class GameResultUI : MonoBehaviour
         v.childControlWidth = true;  v.childControlHeight = true;
         v.childForceExpandWidth = true; v.childForceExpandHeight = false;
 
-        // 标题 + 发光线
+        // Title + glowing line
         titleT = MakeText(panel.transform, "Title", titleText, titleFontSize, textColor, TextAnchor.MiddleCenter, FontStyle.Bold);
         SetPreferredHeight(titleT.gameObject, titleFontSize + 16f);
         var line = MakeImage(panel.transform, "TitleLine", titleLineSprite, Image.Type.Simple);
@@ -148,7 +148,7 @@ public class GameResultUI : MonoBehaviour
 
         Spacer(panel.transform, 8f);
 
-        // 三行统计
+        // Three stat rows
         timeV         = MakeStatRow(panel.transform, timeLabel);
         playerDeathsV = MakeStatRow(panel.transform, playerDeathsLabel);
         robotDeathsV  = MakeStatRow(panel.transform, robotDeathsLabel);
@@ -160,7 +160,7 @@ public class GameResultUI : MonoBehaviour
         SetPreferredHeight(div.gameObject, 4f);
         Spacer(panel.transform, 10f);
 
-        // 按钮行
+        // Button row
         var row = new GameObject("Buttons", typeof(RectTransform));
         row.transform.SetParent(panel.transform, false);
         var h = row.AddComponent<HorizontalLayoutGroup>();
@@ -176,7 +176,7 @@ public class GameResultUI : MonoBehaviour
         nextBtn = MakeButton(row.transform, "Next", nextLabel, out nextBtnText);
         nextBtn.onClick.AddListener(() => { var m = GameResultManager.Instance; if (m != null) m.NextLevel(); });
 
-        // 键盘 / 手柄导航：左右互通
+        // Keyboard / gamepad navigation: left and right link to each other
         var nr = restartBtn.navigation; nr.mode = Navigation.Mode.Explicit; nr.selectOnRight = nextBtn; nr.selectOnLeft = nextBtn; restartBtn.navigation = nr;
         var nn = nextBtn.navigation;    nn.mode = Navigation.Mode.Explicit; nn.selectOnLeft = restartBtn; nn.selectOnRight = restartBtn; nextBtn.navigation = nn;
 
@@ -225,7 +225,7 @@ public class GameResultUI : MonoBehaviour
         return btn;
     }
 
-    // ── 小工具 ──
+    // -- Helpers --
 
     private Text MakeText(Transform parent, string name, string text, int size, Color color, TextAnchor align, FontStyle style)
     {
@@ -276,7 +276,7 @@ public class GameResultUI : MonoBehaviour
         if (buttonNormalSprite == null) buttonNormalSprite = Resources.Load<Sprite>(buttonNormalPath);
         if (buttonHighlightSprite == null) buttonHighlightSprite = Resources.Load<Sprite>(buttonHighlightPath);
         if (popupSprite == null || buttonNormalSprite == null)
-            Debug.LogWarning("[结算UI] SCI-FI GUI Pack 的图没加载到，确认它的 Resources 目录还在，或手动拖 Sprite 到 Inspector", this);
+            Debug.LogWarning("[ResultUI] SCI-FI GUI Pack sprites failed to load; make sure its Resources folder still exists, or drag Sprites into the Inspector manually", this);
 
         if (uiFont == null)
         {
