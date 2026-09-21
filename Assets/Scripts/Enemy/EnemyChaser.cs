@@ -87,6 +87,8 @@ public class EnemyChaser : MonoBehaviour
     public float killDelay = 0.5f;
 [Tooltip("This close to the start point counts as \"home\"")]
     public float homeArriveDistance = 0.6f;
+[Tooltip("When returning, after the grid path ends the enemy walks straight to the exact start point and stops this close to it (world units)")]
+    public float finalApproachStop = 0.08f;
 [Tooltip("After killing the target, how long to wait in place before returning to start")]
     public float postKillPause = 0.5f;
 
@@ -231,7 +233,7 @@ EnterWaiting();   // Pause in place after kill, then wrap up
                 if (DetectAndLock()) break;
                 if (Flat(transform.position, returnGoal) <= homeArriveDistance)
                 {
-// Reached return goal: stop moving, then turn
+// Reached return goal: stop following the grid path (the final approach in FollowPath finishes the last few cm), then turn
                     path = null;
                     bool aligned = returnIsHome
 ? RotateToHomeRotation()          // Back at start -> turn back to the game-start facing
@@ -621,6 +623,24 @@ pathIndex++;   // Reached point, next cell
                     if (energy != null && state == ChaseState.Chasing)
 energy.Drain(drainPerSecond * Time.deltaTime);   // Only chasing drains energy (patrol/return don't)
                 }
+            }
+        }
+
+// Final approach when returning: the grid path ends at the CENTRE of the cell nearest the start point, which can be
+// further than homeArriveDistance from the real start point (a cell is 2 units wide). Without this the enemy stopped
+// at the cell centre, never counted as "arrived", and so never turned back to its start facing.
+// Walk the last stretch straight to the start point (only within one cell, and only over walkable ground).
+        if (move == Vector3.zero && hasPower && state == ChaseState.Returning && (path == null || pathIndex >= path.Count))
+        {
+            Vector3 toGoal = returnGoal - transform.position; toGoal.y = 0f;
+            float dist = toGoal.magnitude;
+            if (dist > finalApproachStop && dist <= grid.cellSize * 1.05f
+                && grid.IsWalkable(grid.WorldToCell(returnGoal)) && grid.IsWalkable(grid.WorldToCell(transform.position)))
+            {
+                Vector3 dir = toGoal / dist;
+                move = dir * Mathf.Min(moveSpeed * CurrentSpeedMultiplier, dist / Mathf.Max(Time.deltaTime, 1e-4f));
+// Once inside the arrive radius the "turn back to start facing" logic owns the rotation -- don't fight it
+                if (dist > homeArriveDistance) FaceDir(dir);
             }
         }
 

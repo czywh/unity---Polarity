@@ -22,6 +22,9 @@ using UnityEngine;
 ///   after powerLinger seconds. The pair is powered together (powerLinkedToo, default): a field at either wall opens both
 ///   ends and both walls become visible; uncheck it on both to make each end need its own field.
 ///
+/// Enemies: by default they are NOT teleported, and while the wall is powered a solid "EnemyBlocker" collider inside the
+///   trigger stops them (player / robot ignore that collider via Physics.IgnoreCollision, so only enemies are held back).
+///
 /// Setup: put a Portal on each wall and drag the other into Linked Portal; you can also fill in only one, the other is back-filled automatically.
 /// </summary>
 [DisallowMultipleComponent]
@@ -81,8 +84,20 @@ public class Portal : MonoBehaviour
     private Collider triggerCollider;
     private float lastFieldTime = -999f;
 
+    [Header("Enemies")]
+    [Tooltip("Off (default): enemies are never teleported. They are stopped by the wall instead (see below)")]
+    public bool teleportEnemies = false;
+    [Tooltip("Enemies are physically blocked by the wall: a solid collider is created inside the trigger that only enemies collide with (player / robot are told to ignore it)")]
+    public bool blockEnemies = true;
+    [Tooltip("Only block enemies while the portal is powered (the wall is visible). Off = always block")]
+    public bool blockEnemiesOnlyWhenPowered = true;
+    [Tooltip("Thickness of the blocking collider as a fraction of the trigger's depth. Must be < 1 so characters overlap the trigger before touching the blocker")]
+    [Range(0.1f, 0.9f)] public float blockerThickness = 0.5f;
+
     [Header("Debug")]
     public bool verboseLog = false;
+
+    private BoxCollider enemyBlocker;
 
     // Global cooldown table: object -> time it can be teleported again. Shared by both portals so ping-pong is prevented
     private static readonly Dictionary<Transform, float> cooldownUntil = new Dictionary<Transform, float>();
@@ -114,6 +129,47 @@ public class Portal : MonoBehaviour
             var wall = transform.Find("Energy_wall");
             if (wall != null) wallVisuals = new[] { wall.gameObject };
         }
+
+        if (blockEnemies) CreateEnemyBlocker();
+    }
+
+    // -- Enemy blocker: a solid box inside the trigger. Player / robot ignore it (Physics.IgnoreCollision), enemies hit it --
+    private void CreateEnemyBlocker()
+    {
+        var box = triggerCollider as BoxCollider;
+        var go = new GameObject("EnemyBlocker");
+        go.layer = 2;   // Ignore Raycast: lasers, missiles, camera and default raycasts never see it
+        go.transform.SetParent(transform, false);
+        enemyBlocker = go.AddComponent<BoxCollider>();
+        enemyBlocker.isTrigger = false;
+        if (box != null)
+        {
+            enemyBlocker.center = box.center;
+            enemyBlocker.size = new Vector3(box.size.x, box.size.y, box.size.z * blockerThickness);
+        }
+        else
+        {
+            enemyBlocker.size = new Vector3(2f, 2f, 0.5f);
+        }
+
+        // Everyone that is not an enemy passes through
+        foreach (var cc in FindObjectsOfType<CharacterController>())
+            if (!IsEnemy(cc.transform) && cc.enabled) Physics.IgnoreCollision(enemyBlocker, cc, true);
+    }
+
+    private static bool IsEnemy(Transform t)
+    {
+        return t != null && (t.GetComponentInParent<EnemyChaser>() != null || t.GetComponentInParent<EnemyDeath>() != null);
+    }
+
+    /// <summary>Re-apply "ignore" for a non-enemy character. Unity resets IgnoreCollision whenever a collider is disabled
+    /// (teleport / respawn disable the CharacterController), so this is called again every time the character is in the trigger.</summary>
+    private void LetThrough(Transform t)
+    {
+        // IgnoreCollision logs an error if either collider is disabled, so only call it when both are live
+        if (enemyBlocker == null || !enemyBlocker.enabled || !enemyBlocker.gameObject.activeInHierarchy) return;
+        foreach (var c in t.GetComponentsInChildren<Collider>())
+            if (c != enemyBlocker && c.enabled && !c.isTrigger) Physics.IgnoreCollision(enemyBlocker, c, true);
     }
 
     private void Start()
@@ -125,6 +181,12 @@ public class Portal : MonoBehaviour
     private void Update()
     {
         UpdatePower(false);
+
+        if (enemyBlocker != null)
+        {
+            bool on = blockEnemies && (IsPowered || !blockEnemiesOnlyWhenPowered);
+            if (enemyBlocker.enabled != on) enemyBlocker.enabled = on;
+        }
     }
 
     // -- Power: electric field contact -> portal on / off, wall visuals shown / hidden --
@@ -171,13 +233,25 @@ public class Portal : MonoBehaviour
     // OnTriggerStay (not Enter): a character already standing in the wall when it powers on still gets teleported
     private void OnTriggerStay(Collider other)
     {
-        if (linkedPortal == null) { Log("linkedPortal is null, ignoring"); return; }
-        if (!IsPowered) return;
-        if (requireLinkedPowered && !linkedPortal.IsPowered) return;
+        if (other == enemyBlocker) return;
         if ((affectedLayers.value & (1 << other.gameObject.layer)) == 0) return;
 
         Transform t = useRootObject ? FindTeleportTarget(other) : other.transform;
         if (t == null) return;
+
+        // Enemies: never teleported (unless allowed); the blocker collider stops them
+        if (IsEnemy(t))
+        {
+            if (!teleportEnemies) return;
+        }
+        else
+        {
+            LetThrough(t);   // player / robot: make sure the blocker ignores them (self-healing, see LetThrough)
+        }
+
+        if (linkedPortal == null) { Log("linkedPortal is null, ignoring"); return; }
+        if (!IsPowered) return;
+        if (requireLinkedPowered && !linkedPortal.IsPowered) return;
 
         // On cooldown (just came through from the other side)
         if (cooldownUntil.TryGetValue(t, out float until) && Time.time < until) return;

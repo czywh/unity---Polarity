@@ -11,7 +11,9 @@ using UnityEngine;
 ///     is on) but has its OWN radius: fieldRadius on this component is never overwritten, so every relay can be tuned
 ///     independently of the robot and of other relays.
 ///     The field closes sustainTime seconds after the last hit.
-///  3. Pickup: it is an InteractableBase. Walk up to it and the prompt "Press [F] to pick up Energy Relay" appears;
+///  3. Robot recharge: while the robot stands inside this relay's open field its energy is held at maximum
+///     (keepRobotFullInField), so the robot can keep its own field running for free next to a powered relay.
+///  4. Pickup: it is an InteractableBase. Walk up to it and the prompt "Press [F] to pick up Energy Relay" appears;
 ///     press F and the relay is carried by the player (child of the player, colliders off, field off, towers ignore it).
 ///     While carried the prompt reads "Press [F] to place Energy Relay"; pressing F again drops it in front of the player,
 ///     snapped to the ground, and everything returns to normal. (While carrying, the player's Interactor ignores other
@@ -57,6 +59,10 @@ public class EnergyRelay : InteractableBase
     [Tooltip("After the last laser hit, keep the field open for this long (seconds) -- bridges the gap between physics ticks")]
     public float sustainTime = 0.2f;
 
+    [Header("Robot recharge")]
+    [Tooltip("While the robot is inside this relay's open field, its EnergySystem is held at maximum every frame")]
+    public bool keepRobotFullInField = true;
+
     [Header("Pickup / place")]
     [Tooltip("Prompt shown when the player can pick it up")]
     public string pickupPrompt = "Press [F] to pick up " + DisplayName;
@@ -87,6 +93,7 @@ public class EnergyRelay : InteractableBase
     [SerializeField] private bool carriedReadout;
     [SerializeField] private bool fieldOpenReadout;
     [SerializeField] private bool beingHitReadout;
+    [SerializeField] private bool robotInFieldReadout;
     public bool verboseLog = false;
 
     public bool IsCarried => CarriedRelay == this;
@@ -103,6 +110,9 @@ public class EnergyRelay : InteractableBase
 
     private ElectricField activeField;
     private float hitUntil = -1f;
+    private RobotFieldEmitter robot;
+    private EnergySystem robotEnergy;
+    private Collider robotCollider;
     private int pickedUpFrame = -1;   // the F press that picked it up must not also place it in the same frame
     private int placedFrame = -1;     // ...and the F press that placed it must not pick it straight back up (Interactor may run after us)
     private bool placeArmed;          // becomes true once F has been released after pick-up; only then can F place it
@@ -159,9 +169,16 @@ public class EnergyRelay : InteractableBase
 
     private void Start()
     {
+        robot = FindFirstObjectByType<RobotFieldEmitter>(FindObjectsInactive.Include);
+        if (robot != null)
+        {
+            robotEnergy = robot.GetComponent<EnergySystem>();
+            robotCollider = robot.GetComponent<CharacterController>();
+            if (robotCollider == null) robotCollider = robot.GetComponentInChildren<Collider>();
+        }
+
         if (matchRobotField)
         {
-            var robot = FindFirstObjectByType<RobotFieldEmitter>(FindObjectsInactive.Include);
             if (robot != null)
             {
                 // Visuals only -- fieldRadius stays this relay's own value
@@ -201,6 +218,28 @@ public class EnergyRelay : InteractableBase
 
         carriedReadout = IsCarried;
         fieldOpenReadout = IsFieldOpen;
+    }
+
+    // Runs after RobotFieldEmitter.Update has drained this frame, so the robot's bar never dips below full while inside
+    protected override void LateUpdate()
+    {
+        base.LateUpdate();
+        KeepRobotFull();
+    }
+
+    private void KeepRobotFull()
+    {
+        bool inside = false;
+        if (keepRobotFullInField && activeField != null && robot != null && robotEnergy != null && robot.isActiveAndEnabled)
+        {
+            Vector3 c = activeField.transform.position;
+            float r = activeField.radius;
+            Vector3 p = robotCollider != null ? robotCollider.ClosestPoint(c) : robot.transform.position;
+            inside = (p - c).sqrMagnitude <= r * r;
+            if (inside && robotEnergy.CurrentEnergy < robotEnergy.MaxEnergy)
+                robotEnergy.Recharge(robotEnergy.MaxEnergy);   // Recharge clamps at max
+        }
+        robotInFieldReadout = inside;
     }
 
     // ------------------------------------------------------------------
